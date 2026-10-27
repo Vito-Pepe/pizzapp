@@ -1,0 +1,6 @@
+.git
+test
+*.md
+update.sh
+update.log
+.env

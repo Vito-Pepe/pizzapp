@@ -1,0 +1,29 @@
+services:
+  pizzapp:
+    build: .
+    ports:
+      # Raggiungibile dalla LAN (http://IP-DEL-PI:8090) e dalla tailnet
+      # (https://pizzapp.<tailnet>.ts.net dalla repo ingressi-https). Mai su Internet.
+      # 8080-8089 sono già usate da altre app sul Pi.
+      - "8090:3000"
+    volumes:
+      # Ricette, farine, lievito madre, impostazioni e backup giornalieri
+      - dati:/data
+    # Il codice non si scrive: solo il volume dei dati e /tmp
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 50
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/salute"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+volumes:
+  dati:
