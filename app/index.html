@@ -6,31 +6,41 @@
   <meta name="color-scheme" content="light dark">
   <meta name="theme-color" content="#c8402b">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Impasti">
-  <meta name="description" content="Calcolatore e diario degli impasti per la pizza">
+  <meta name="description" content="Impasti e ImpastiPLUS: calcolatori e diario per l'impasto della pizza">
   <title>Impasti</title>
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icona.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="icona-180.png">
-  <link rel="stylesheet" href="impasti.css">
+  <link rel="icon" href="/icona.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icona-180.png">
+  <link rel="stylesheet" href="/comune/impasti-stile.css">
+  <script src="/scelta-app.js"></script>
 </head>
 <body>
-  <div class="app">
-    <main id="vista" class="main"></main>
-  </div>
-  <nav id="schede" class="tabs" aria-label="Sezioni"></nav>
-  <div id="avviso" class="toast" role="status" hidden></div>
-  <noscript><p class="noscript">Per usare Impasti attiva JavaScript nel browser.</p></noscript>
-
-  <script src="impasti-calcoli.js"></script>
-  <script src="impasti-base.js"></script>
-  <script src="impasti-grafici.js"></script>
-  <script src="impasti-condividi.js"></script>
-  <script src="impasti-calcola.js"></script>
-  <script src="impasti-diario.js"></script>
-  <script src="impasti-farine.js"></script>
-  <script src="impasti-altro.js"></script>
-  <script src="impasti.js"></script>
+  <main class="main choose">
+    <header class="choose-head">
+      <img src="/icona.svg" alt="" width="72" height="72">
+      <h1>Impasti per la pizza</h1>
+      <p class="lead">Scegli l'app</p>
+    </header>
+    <nav class="choices" aria-label="App">
+      <a class="choice" href="/impasti/">
+        <span class="choice-icon" aria-hidden="true">🍕</span>
+        <span class="choice-body">
+          <strong>Impasti</strong>
+          <span>Cinque stili, pianificazione dall'ora di cena, diario con cotture e consigli, farine con codice a barre, lievito madre e statistiche.</span>
+        </span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+      <a class="choice plus" href="/impastiplus/">
+        <span class="choice-icon" aria-hidden="true">🧮</span>
+        <span class="choice-body">
+          <strong>ImpastiPLUS</strong>
+          <span>Il calcolatore completo: prefermenti (poolish, biga, autolisi), pasta di riporto, cinque tipi di lievito, fino a sei farine, utilità e ricette con foto.</span>
+        </span>
+        <span class="chev" aria-hidden="true">›</span>
+      </a>
+    </nav>
+    <p class="hint center">Ricette, farine e impostazioni stanno sul Raspberry Pi, con un backup al giorno.</p>
+  </main>
 </body>
 </html>

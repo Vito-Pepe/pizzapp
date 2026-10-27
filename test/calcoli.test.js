@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const C = require("../app/impasti-calcoli.js");
+const C = require("../app/impasti/impasti-calcoli.js");
 
 const vicino = (a, b, tolleranza, msg) => assert.ok(Math.abs(a - b) <= tolleranza, `${msg || ""} ${a} invece di ${b}`);
 

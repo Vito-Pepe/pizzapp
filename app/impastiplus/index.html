@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#2e7d4f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="ImpastiPLUS">
+  <meta name="description" content="ImpastiPLUS: il calcolatore completo delle dosi per l'impasto della pizza">
+  <title>ImpastiPLUS</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="/icona.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icona-180.png">
+  <link rel="stylesheet" href="/comune/impasti-stile.css">
+  <link rel="stylesheet" href="plus.css">
+</head>
+<body class="plus">
+  <div class="appbar"><a class="appbar-back" href="/">‹ App</a><span class="appbar-name">🧮 ImpastiPLUS</span></div>
+  <div class="app">
+    <main id="vista" class="main"></main>
+  </div>
+  <nav id="schede" class="tabs" aria-label="Sezioni"></nav>
+  <div id="avviso" class="toast" role="status" hidden></div>
+  <noscript><p class="noscript">Per usare ImpastiPLUS attiva JavaScript nel browser.</p></noscript>
+
+  <script src="/comune/lievito-pizzapp.js"></script>
+  <script src="plus-calcoli.js"></script>
+  <script src="/comune/impasti-base.js"></script>
+  <script src="plus.js"></script>
+</body>
+</html>

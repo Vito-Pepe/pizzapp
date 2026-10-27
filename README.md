@@ -1,12 +1,15 @@
-# pizzapp — Impasti
+# pizzapp — Impasti e ImpastiPLUS
 
-**Impasti** è un calcolatore e diario degli impasti per la pizza, che gira in Docker sul Raspberry Pi. Ricette, farine e lievito madre stanno sul Pi, quindi sono gli stessi dal telefono e dal computer.
+Due app per l'impasto della pizza, in un solo container Docker sul Raspberry Pi. Ricette, farine, foto e impostazioni stanno sul Pi, quindi sono le stesse dal telefono e dal computer.
 
-- Pagina: `https://pizzapp.<tailnet>.ts.net` dalla tailnet (indirizzo della repo `ingressi-https`), oppure `http://IP-DEL-PI:8090` (o `http://vito:8090`) come riserva.
-- Si apre anche dal riquadro **Impasti** della homepage.
-- Su iPhone: Safari → Condividi → "Aggiungi alla schermata Home".
+- Pagina: `https://pizzapp.<tailnet>.ts.net` dalla tailnet (indirizzo della repo `ingressi-https`), oppure `http://IP-DEL-PI:8090` (o `http://vito:8090`) come riserva. Si apre anche dal riquadro **Impasti** della homepage.
+- La prima pagina fa scegliere l'app:
+  - **Impasti** (`/impasti/`): calcolatore per stili, pianificazione, diario con cotture e consigli, farine con codice a barre, lievito madre, statistiche;
+  - **ImpastiPLUS** (`/impastiplus/`): il calcolatore completo, con le stesse dosi di PizzApp, utilità e ricette con foto.
+- I vecchi indirizzi di Impasti (`/#/diario` e simili) rimandano da soli a `/impasti/`.
+- Su iPhone: Safari → Condividi → "Aggiungi alla schermata Home". Si può aggiungere la pagina di scelta o direttamente una delle due app.
 
-## Cosa fa
+## Impasti
 
 - **Calcola**: cinque stili.
   - **Pizza Facile**: quante pizze, quante ore, frigo sì o no, che forno hai.
@@ -36,10 +39,43 @@
   - temperatura di casa e del frigo;
   - curva del lievito modificabile punto per punto;
   - esportazione e importazione di tutti i dati in un file JSON.
+- **Modello del lievito**: interruttore tra **Impasti** (la curva spiegata più sotto, modificabile) e **PizzApp** (lo stesso modello di ImpastiPLUS, con il ritocco da −50% a +50%). Si cambia in **Altro → Impostazioni** o al volo sotto le dosi, per confrontare.
 
 Promemoria e notifiche per ora non ci sono.
 
-## Come sono calcolate le dosi
+## ImpastiPLUS
+
+- **Calcola** in una pagina sola:
+  - panielli, anche di due misure;
+  - Verace o Teglia;
+  - fino a 6 farine con le loro percentuali, scelte tra quelle della scheda Farine di Impasti;
+  - acqua, sale e grassi in %;
+  - ore e temperatura a temperatura ambiente e, se serve, in frigo;
+  - cinque lieviti: fresco (LBF), secco istantaneo (LSI), secco attivo (LSA), madre solido (LMS), madre liquido (LML);
+  - pasta di riporto da aggiungere, con forza bassa o alta, e da tenere per la volta dopo;
+  - **poolish**, **biga** e **autolisi**;
+  - scarto.
+
+  Le dosi sono divise per fasi (poolish, biga, autolisi, impasto). Ci sono avvisi per la lievitazione eccessiva (il prefermento ha già quasi tutto il lievito) e per le percentuali sbagliate.
+- **Impostazioni**: si accendono solo i campi che si usano. C'è anche il ritocco del lievito (da −50% a +50%) e lo schermo sempre acceso (in https).
+- **Ricette**: si salvano con nome e nota; con lo stesso nome chiede se sostituire. Si aprono nel calcolatore, si copiano o condividono come testo, e si può aggiungere una **foto**: la pagina la rimpicciolisce (JPEG, al massimo 1600 px) e la salva sul Pi.
+- **Utilità**:
+  - temperatura dell'acqua per avere l'impasto alla temperatura voluta, secondo l'impastatrice;
+  - percentuali di due farine per una W voluta;
+  - W di un mix fino a 4 farine;
+  - impasto per una teglia rettangolare o tonda.
+- **Guida**: come si usa, glossario delle sigle, da dove vengono le dosi.
+
+**Il lievito in ImpastiPLUS** (modello di PizzApp, riscritto in `app/comune/lievito-pizzapp.js`):
+- **Lievito fresco**: in % sulla farina vale (2,528·e^(−0,128·T) / ore)^1,45. Con temperatura ambiente e frigo, le ore delle due fasi si sommano pesate per la temperatura.
+- **Lieviti secchi**: dividono per un fattore che cresce con la temperatura. Il **lievito madre** ha curve a parte.
+- **Dalla % ai grammi**: ritocco 1,8·farina^−0,1; Verace ×0,9; Teglia ×2,2 calcolata sull'acqua.
+- **Prefermenti**: con biga o poolish il lievito dell'impasto si dimezza. La biga ha l'1% di lievito sulla sua farina; il poolish 3,9%·e^(−0,23·ore).
+- **Pasta di riporto**: toglie lo 0,29% (forza bassa) o lo 0,58% (alta) di lievito per ogni punto %.
+
+Il calcolo completo è in `app/impastiplus/plus-calcoli.js`, i test in `test/plus.test.js` e `test/lievito-pizzapp.test.js`.
+
+## Come sono calcolate le dosi di Impasti
 
 - **Percentuali sulla farina**: acqua = farina × idratazione; sale, olio e zucchero in grammi per kg di farina. La farina si ricava in modo che la somma degli ingredienti dia il peso dell'impasto (panetti × peso, oppure superficie della teglia × grammi per cm²).
 - **Lievito madre**: la sua farina e la sua acqua si tolgono da quelle da aggiungere. **Biga**: biga e impasto finale insieme danno l'idratazione totale.
@@ -49,23 +85,24 @@ Promemoria e notifiche per ora non ci sono.
 
 Le dosi di lievito sono indicazioni: farina, temperatura vera e forno fanno la differenza. Se i tuoi impasti lievitano sempre troppo o troppo poco, ritocca la curva in **Altro → Impostazioni**: vale per tutte le ricette nuove.
 
-Il codice dei calcoli è in `app/impasti-calcoli.js`, i test in `test/calcoli.test.js`.
+Il codice dei calcoli è in `app/impasti/impasti-calcoli.js`, i test in `test/calcoli.test.js`.
 
 ## I dati
 
 Tutto sta nel volume Docker `pizzapp_dati`:
-- `impasti.json` contiene ricette, farine, lieviti madre e impostazioni;
-- `backup/` contiene una copia al giorno, le ultime 14.
+- `impasti.json` contiene le ricette di Impasti e di ImpastiPLUS, farine, lieviti madre e impostazioni;
+- `backup/` contiene una copia al giorno di `impasti.json`, le ultime 14;
+- `foto/` contiene le foto delle ricette di ImpastiPLUS, che non entrano in `impasti.json` né nell'esportazione.
 
 Ogni salvataggio scrive un file nuovo e poi lo sostituisce, così il file non resta mai a metà.
 
-Backup completo dal Pi:
+Backup completo dal Pi, foto comprese:
 
 ```bash
 docker run --rm -v pizzapp_dati:/data -v "$HOME":/backup alpine tar czf /backup/pizzapp-dati.tgz -C /data .
 ```
 
-Dalla pagina: **Altro → Impostazioni → Esporta tutto** scarica un file `.json`. **Importa da file** lo rimette, aggiungendo o sostituendo tutto.
+Dalla pagina: in Impasti, **Altro → Impostazioni → Esporta tutto** scarica un file `.json` con i dati di tutte e due le app, foto escluse. **Importa da file** lo rimette, aggiungendo o sostituendo tutto.
 
 ## Installazione sul Raspberry Pi
 
@@ -94,6 +131,7 @@ Indirizzo HTTPS senza porta: servizio `pizzapp` nella repo `ingressi-https`. Ser
 - **Pagina**: non carica niente da altri siti (Content-Security-Policy `default-src 'self'`) e non usa cookie.
 - **Scritture**: accettate solo in JSON e solo dalla pagina stessa.
 - **Unico collegamento verso Internet**: la ricerca del codice a barre su Open Food Facts, fatta dal server.
+- **Foto**: accettate solo come JPEG, fino a circa 4 MB, con un nome casuale.
 
 ## Sviluppo
 

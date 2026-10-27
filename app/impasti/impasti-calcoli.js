@@ -3,6 +3,7 @@
 (function (radice) {
   "use strict";
 
+  const LP = typeof module !== "undefined" && module.exports ? require("../comune/lievito-pizzapp.js") : radice.LievitoPizzapp;
   const TEMP_RIF = 20;
 
   // --- Lievitazione ---
@@ -70,6 +71,23 @@
   // Lievito madre suggerito, in % sulla farina, partendo dalla dose di lievito fresco
   function madreSuggerita(doseFresco) {
     return arrotonda(Math.min(Math.max(doseFresco * 5.7, 2), 40), 0);
+  }
+
+  // --- Modello del lievito: la curva di Impasti oppure quello di PizzApp (Impostazioni) ---
+
+  function modelloDi(imp = {}) {
+    return imp.modello === "pizzapp" ? "pizzapp" : "impasti";
+  }
+
+  function oreEquivalentiModello(fasi, imp = {}) {
+    if (modelloDi(imp) !== "pizzapp") return oreEquivalenti(fasi);
+    return fasi.reduce((s, f) => s + (Number(f.ore) || 0) * LP.velocita(Number(f.temp) || 0), 0);
+  }
+
+  // Lievito fresco in g/kg per "ore a 20 °C", senza ritocchi: per il grafico della curva
+  function doseBase(ore, imp = {}) {
+    if (modelloDi(imp) === "pizzapp") return 10 * LP.percFresco([{ ore, temp: TEMP_RIF }]);
+    return doseDaCurva(ore, imp.curva);
   }
 
   // --- Stili di impasto e valori di partenza ---
@@ -200,8 +218,23 @@
     // Lievito dell'impasto finale (sulle fasi di puntata, frigo e appretto)
     const fasi = fasiLievitazione(input, imp);
     const oreTotali = fasi.reduce((s, f) => s + f.ore, 0);
-    const { oreEquivalenti: oreEq, dose } = doseLievito({ fasi, sale, idratazione: h * 100, curva: imp.curva });
+    const modello = modelloDi(imp);
+    const coeff = Math.min(Math.max(Number(imp.coeffPizzapp) || 1, 0.5), 1.5);
+    const tempMax = Math.max(...fasi.map((f) => f.temp), 0);
+    const teglie = input.stile === "teglia";
+    let oreEq;
+    let dose;
+    if (modello === "pizzapp") {
+      const perc = LP.percFresco(fasi);
+      const d = LP.dosaggio({ totale: totaleConScarto, ingredienti: (h + extra) * 100, perc, teglia: teglie, acqua: h * 100, coeff });
+      oreEq = oreEquivalentiModello(fasi, imp);
+      dose = perc > 0 ? (d.grammi / d.farina) * 1000 : 0;
+    } else {
+      ({ oreEquivalenti: oreEq, dose } = doseLievito({ fasi, sale, idratazione: h * 100, curva: imp.curva }));
+    }
     const tipo = input.stile === "biga" ? "fresco" : ["fresco", "secco", "madre"].includes(input.lievito) ? input.lievito : "fresco";
+    // Lievito secco: un terzo del fresco con Impasti, il fattore del secco istantaneo con PizzApp
+    const fattoreSecco = modello === "pizzapp" ? LP.fattoreSecco("LSI", tempMax) : 1 / 3;
 
     let biga = null;
     let rinfresco = null;
@@ -230,14 +263,20 @@
       lievitoGrammi = biga.lievito + rinfresco.lievito;
       if (biga.ore < 12) avvisi.push("Una biga di meno di 12 ore matura poco: di solito si fanno 16-24 ore a 16-18 °C.");
     } else if (tipo === "madre") {
-      const m = (input.madre?.percentuale != null && input.madre.percentuale !== "" ? Number(input.madre.percentuale) : madreSuggerita(dose)) / 100;
       const hm = (Number(input.madre?.idratazione) || 100) / 100;
+      let suggerita = madreSuggerita(dose);
+      if (modello === "pizzapp") {
+        // Solido o liquido secondo l'idratazione del lievito madre; poi gli stessi ritocchi del fresco
+        const d = LP.dosaggio({ totale: totaleConScarto, ingredienti: (h + extra) * 100, perc: LP.percMadre(fasi, hm >= 0.75), teglia: teglie, acqua: h * 100, coeff });
+        suggerita = arrotonda(Math.min((d.grammi / d.farina) * 100, 80), 0);
+      }
+      const m = (input.madre?.percentuale != null && input.madre.percentuale !== "" ? Number(input.madre.percentuale) : suggerita) / 100;
       farina = totaleConScarto / (1 + h + extra);
       const grammi = farina * m;
-      madre = { grammi, farina: grammi / (1 + hm), acqua: (grammi * hm) / (1 + hm), percentuale: m * 100, suggerita: madreSuggerita(dose), idratazione: hm * 100 };
+      madre = { grammi, farina: grammi / (1 + hm), acqua: (grammi * hm) / (1 + hm), percentuale: m * 100, suggerita, idratazione: hm * 100 };
       if (farina * h - madre.acqua < 0) avvisi.push("Con questa quantità di lievito madre l'acqua non basta: riduci il lievito madre o alza l'idratazione.");
     } else {
-      const y = tipo === "secco" ? dose / 3 : dose;
+      const y = tipo === "secco" ? dose * fattoreSecco : dose;
       farina = totaleConScarto / (1 + h + extra + y / 1000);
       lievitoGrammi = (farina * y) / 1000;
     }
@@ -278,7 +317,9 @@
       olio: (farina * olio) / 1000,
       zucchero: (farina * zucchero) / 1000,
       idratazione: h * 100,
-      lievito: { tipo, grammi: lievitoGrammi, doseFresco: dose, percentuale: tipo === "madre" ? madre.percentuale : ((lievitoGrammi / farina) * 100) },
+      lievito: { tipo, grammi: lievitoGrammi, doseFresco: dose, dose: tipo === "secco" ? dose * fattoreSecco : dose, percentuale: tipo === "madre" ? madre.percentuale : ((lievitoGrammi / farina) * 100) },
+      modello,
+      coeffPizzapp: coeff,
       madre,
       biga,
       rinfresco,
@@ -465,7 +506,7 @@
 
   const Calcoli = {
     velocita, oreEquivalenti, dosePredefinita, curvaPredefinita, curvaValida, doseDaCurva, doseLievito, madreSuggerita,
-    ORE_CURVA_TABELLA: ORE_CURVA,
+    ORE_CURVA_TABELLA: ORE_CURVA, modelloDi, oreEquivalentiModello, doseBase, LP,
     STILI, FORNI, predefinito, fasiLievitazione, calcola, mixFarine,
     intervalloW, stimaW, durataPerW, rinfrescoMadre,
     NOMI_FASI, fasiComplete, pianifica, PROBLEMI, VOTI, consigliCottura,
