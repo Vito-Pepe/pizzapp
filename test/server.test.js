@@ -110,10 +110,39 @@ test("scritture rifiutate", async () => {
   assert.equal((await chiama("PUT", "/api/ricette/x1", { testo: "x".repeat(1100000) })).stato, 413);
 });
 
-test("impostazioni", async () => {
+test("impostazioni: le chiavi si uniscono, Impasti e ImpastiPLUS non si sovrascrivono", async () => {
   const r = await chiama("PUT", "/api/impostazioni", { tempAmbiente: 22, curva: [{ ore: 8, dose: 3 }, { ore: 24, dose: 1 }] });
   assert.equal(r.stato, 200);
-  assert.equal((await chiama("GET", "/api/stato")).json.impostazioni.tempAmbiente, 22);
+  await chiama("PUT", "/api/impostazioni", { plus: { coeff: 1.1 } });
+  await chiama("PUT", "/api/impostazioni", { modello: "pizzapp" });
+  const imp = (await chiama("GET", "/api/stato")).json.impostazioni;
+  assert.equal(imp.tempAmbiente, 22);
+  assert.equal(imp.modello, "pizzapp");
+  assert.deepEqual(imp.plus, { coeff: 1.1 });
+});
+
+test("ricette di ImpastiPLUS", async () => {
+  const r = await chiama("PUT", "/api/plus/p1", { nome: "Classica", input: { panielli: 4 } });
+  assert.equal(r.stato, 200);
+  assert.equal((await chiama("GET", "/api/stato")).json.plus.p1.nome, "Classica");
+  assert.equal((await chiama("DELETE", "/api/plus/p1", {})).json.esisteva, true);
+});
+
+test("foto: carica, leggi, elimina", async () => {
+  // JPEG minimo valido abbastanza per il controllo (inizio FF D8 FF)
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 1), Buffer.from([0xff, 0xd9])]);
+  const su = await chiama("POST", "/api/foto", { dati: `data:image/jpeg;base64,${jpeg.toString("base64")}` });
+  assert.equal(su.stato, 200);
+  assert.match(su.json.id, /^[0-9a-f]{16}$/);
+  const giu = await fetch(`http://127.0.0.1:${porta}/api/foto/${su.json.id}.jpg`);
+  assert.equal(giu.status, 200);
+  assert.equal(giu.headers.get("content-type"), "image/jpeg");
+  assert.deepEqual(Buffer.from(await giu.arrayBuffer()), jpeg);
+  assert.equal((await chiama("POST", "/api/foto", { dati: Buffer.from("non è una foto, è testo lungo abbastanza".repeat(5)).toString("base64") })).stato, 400);
+  assert.equal((await chiama("GET", "/api/foto/../../etc.jpg")).stato, 404);
+  assert.equal((await chiama("GET", "/api/foto/NON-VALIDO.jpg")).stato, 400);
+  assert.equal((await chiama("DELETE", `/api/foto/${su.json.id}`, {})).json.esisteva, true);
+  assert.equal((await fetch(`http://127.0.0.1:${porta}/api/foto/${su.json.id}.jpg`)).status, 404);
 });
 
 test("esportare e importare", async () => {
@@ -146,12 +175,18 @@ test("farina dal codice a barre", async () => {
 test("file dell'app e intestazioni di sicurezza", async () => {
   const r = await chiama("GET", "/");
   assert.equal(r.stato, 200);
+  assert.match(r.testo, /Scegli l'app/);
   assert.match(r.intestazioni.get("content-type"), /text\/html/);
   assert.match(r.intestazioni.get("content-security-policy"), /default-src 'self'/);
   assert.equal(r.intestazioni.get("referrer-policy"), "no-referrer");
   const etag = r.intestazioni.get("etag");
   assert.equal((await chiama("GET", "/", undefined, { "If-None-Match": etag })).stato, 304);
-  assert.equal((await chiama("GET", "/impasti-calcoli.js")).stato, 200);
+  assert.equal((await chiama("GET", "/impasti/impasti-calcoli.js")).stato, 200);
+  assert.equal((await chiama("GET", "/comune/lievito-pizzapp.js")).stato, 200);
+  assert.match((await chiama("GET", "/impasti/")).testo, /impasti-calcola\.js/);
+  const cartella = await fetch(`http://127.0.0.1:${porta}/impasti`, { redirect: "manual" });
+  assert.equal(cartella.status, 301);
+  assert.equal(cartella.headers.get("location"), "/impasti/");
   assert.equal((await chiama("GET", "/../server/server.js")).stato, 404);
   assert.equal((await chiama("GET", "/%2e%2e/server/server.js")).stato, 404);
   assert.equal((await chiama("GET", "/non-esiste.js")).stato, 404);

@@ -3,6 +3,7 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { Archivio, COLLEZIONI, idValido } = require("./archivio");
 
 const PORTA = Number(process.env.PORT) || 3000;
@@ -12,6 +13,8 @@ const CARTELLA_APP = path.resolve(process.env.APP_DIR || path.join(__dirname, ".
 const OFF_URL = process.env.OFF_URL || "https://world.openfoodfacts.org";
 const MAX_CORPO = 1024 * 1024;
 const MAX_IMPORTA = 10 * 1024 * 1024;
+// Una foto arriva già rimpicciolita dalla pagina (JPEG, 1600 px al massimo), in base64
+const MAX_FOTO = 6 * 1024 * 1024;
 
 const TIPI = {
   ".html": "text/html; charset=utf-8",
@@ -172,7 +175,36 @@ async function api(req, res, url) {
     }
   }
 
+  if (parti[0] === "foto") return foto(req, res, parti);
+
   return errore(res, 404, "Non trovato");
+}
+
+// --- Foto delle ricette ---
+
+async function foto(req, res, parti) {
+  if (req.method === "POST" && parti.length === 1) {
+    const corpo = await leggiCorpo(req, MAX_FOTO);
+    const testo = typeof corpo?.dati === "string" ? corpo.dati.replace(/^data:image\/jpeg;base64,/, "") : "";
+    const dati = Buffer.from(testo, "base64");
+    if (dati.length < 100 || dati[0] !== 0xff || dati[1] !== 0xd8 || dati[2] !== 0xff) return errore(res, 400, "Serve una foto JPEG");
+    const id = crypto.randomBytes(8).toString("hex");
+    archivio.salvaFoto(id, dati);
+    return rispondi(res, 200, { id });
+  }
+  const id = String(parti[1] || "").replace(/\.jpg$/, "");
+  const file = parti.length === 2 ? archivio.percorsoFoto(id) : null;
+  if (!file) return errore(res, 400, "Foto non valida");
+  if (req.method === "DELETE") return rispondi(res, 200, { ok: true, esisteva: archivio.eliminaFoto(id) });
+  if (req.method === "GET") {
+    return fs.stat(file, (err, info) => {
+      if (err) return errore(res, 404, "Foto non trovata");
+      // Ogni foto ha un nome nuovo: si può tenere in cache per sempre
+      res.writeHead(200, { ...INTESTAZIONI, "Content-Type": "image/jpeg", "Content-Length": info.size, "Cache-Control": "private, max-age=31536000, immutable" });
+      fs.createReadStream(file).pipe(res);
+    });
+  }
+  return errore(res, 405, "Metodo non permesso");
 }
 
 // --- File dell'app ---
@@ -189,6 +221,11 @@ function statico(req, res, url) {
   const file = path.resolve(CARTELLA_APP, `.${percorso}`);
   if (!file.startsWith(CARTELLA_APP + path.sep)) return errore(res, 404, "Non trovato");
   fs.stat(file, (err, info) => {
+    // Una cartella senza la barra finale (/impasti) va alla sua pagina (/impasti/)
+    if (!err && info.isDirectory()) {
+      res.writeHead(301, { ...INTESTAZIONI, Location: `${url.pathname}/` });
+      return res.end();
+    }
     if (err || !info.isFile()) {
       res.writeHead(404, { ...INTESTAZIONI, "Content-Type": "text/plain; charset=utf-8" });
       return res.end("Non trovato");

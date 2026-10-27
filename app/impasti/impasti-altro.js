@@ -122,10 +122,34 @@
           num("oreRinfrescoMadre", "Ore tra rinfresco e impasto", "h", { min: 1, max: 24, passo: 0.5, aiuto: "Per il lievito madre" })),
         App.sceltaPulsanti({ etichetta: "Lievito predefinito", valore: imp.lievito, opzioni: [{ valore: "fresco", testo: "Fresco" }, { valore: "secco", testo: "Secco" }], cambia: (v) => { imp.lievito = v; salva(); } }),
         h("p", { class: "hint" }, "Le nuove temperature valgono per gli impasti nuovi. Per una bozza già aperta nel calcolatore cambia le temperature delle fasi.")),
+      sezioneModello(imp, salva),
       editorCurva(imp, salva),
       sezioneDati());
     return pagina;
   });
+
+  // Modello del lievito: la curva di Impasti o il modello di PizzApp, con il suo ritocco
+  function sezioneModello(imp, salva) {
+    const box = h("section", { class: "panel" });
+    const ritocco = h("div");
+    const disegnaRitocco = () => {
+      ritocco.textContent = "";
+      if (imp.modello !== "pizzapp") return;
+      const valori = [];
+      for (let v = 0.5; v <= 1.501; v += 0.05) valori.push(Math.round(v * 100) / 100);
+      const sel = h("select", { "aria-label": "Ritocco del lievito", onchange: () => { imp.coeffPizzapp = Number(sel.value); salva(); } },
+        valori.map((v) => h("option", { value: String(v), selected: Math.abs(v - (Number(imp.coeffPizzapp) || 1)) < 0.001 }, v === 1 ? "0%" : `${v > 1 ? "+" : "−"}${Math.round(Math.abs(v - 1) * 100)}%`)));
+      ritocco.append(h("div", { class: "field" }, h("label", null, "Ritocco del lievito"), sel,
+        h("p", { class: "hint" }, "Come in PizzApp: più o meno lievito rispetto al modello, per tutte le ricette nuove.")));
+    };
+    box.append(
+      h("h2", null, "Modello del lievito"),
+      h("p", { class: "hint" }, "Impasti usa la sua curva, che puoi modificare qui sotto. PizzApp usa il modello dell'app PizzApp: stessi dati in ingresso, dosi un po' diverse (di solito un po' più lievito con frigo e temperature fresche)."),
+      App.sceltaPulsanti({ valore: imp.modello === "pizzapp" ? "pizzapp" : "impasti", opzioni: [{ valore: "impasti", testo: "Impasti" }, { valore: "pizzapp", testo: "PizzApp" }], cambia: (v) => { imp.modello = v; salva(); disegnaRitocco(); } }),
+      ritocco);
+    disegnaRitocco();
+    return box;
+  }
 
   function editorCurva(imp, salvaTutto) {
     const box = h("section", { class: "panel" });
@@ -173,7 +197,7 @@
     }
 
     box.append(
-      h("h2", null, "Curva del lievito"),
+      h("h2", null, "Curva del lievito (modello Impasti)"),
       h("p", { class: "hint" }, "Quanto lievito fresco serve, per kg di farina, in base alle ore di lievitazione a 20 °C. Il frigo e le altre temperature vengono convertiti in \"ore a 20 °C\". Se i tuoi impasti lievitano sempre troppo o troppo poco, abbassa o alza i valori: valgono per tutte le ricette nuove."),
       grafico,
       tabella,
@@ -218,7 +242,7 @@
       h("h2", null, "I tuoi dati"),
       h("p", { class: "hint" }, "Ricette, farine, lieviti madre e impostazioni stanno sul Raspberry Pi, con una copia automatica al giorno. Puoi anche scaricarli in un file."),
       h("div", { class: "actions" },
-        h("a", { class: "btn", href: "api/esporta", download: "" }, "⬇️ Esporta tutto"),
+        h("a", { class: "btn", href: "/api/esporta", download: "" }, "⬇️ Esporta tutto"),
         h("button", { type: "button", class: "btn", onclick: () => file.click() }, "⬆️ Importa da file"),
         file));
   }

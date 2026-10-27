@@ -6,6 +6,17 @@
   const { h } = App;
   const main = document.getElementById("vista");
 
+  App.configura({
+    nome: "Impasti",
+    schede: [
+      { id: "calcola", testo: "Calcola", icona: "🧮" },
+      { id: "pianifica", testo: "Pianifica", icona: "⏰" },
+      { id: "diario", testo: "Diario", icona: "📒" },
+      { id: "farine", testo: "Farine", icona: "🌾" },
+      { id: "altro", testo: "Altro", icona: "☰" },
+    ],
+    schedaDi: { madre: "altro", statistiche: "altro", impostazioni: "altro" },
+  });
   App.disegnaSchede();
   main.append(h("p", { class: "loading" }, "Carico i dati…"));
   try {

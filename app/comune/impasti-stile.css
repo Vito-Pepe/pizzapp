@@ -94,8 +94,38 @@ a { color: var(--accent); }
 .main {
   width: 100%;
   max-width: 760px;
-  padding: max(16px, env(safe-area-inset-top)) 16px calc(var(--tabs-h) + 24px + env(safe-area-inset-bottom));
+  padding: 16px 16px calc(var(--tabs-h) + 24px + env(safe-area-inset-bottom));
 }
+
+/* Barra in alto: nome dell'app e ritorno alla scelta */
+.appbar {
+  position: sticky; top: 0; z-index: 9;
+  display: flex; align-items: center; gap: 12px;
+  padding: calc(env(safe-area-inset-top) + 8px) 16px 8px;
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.92rem;
+}
+.appbar-back { font-weight: 700; text-decoration: none; min-height: 32px; display: inline-flex; align-items: center; }
+.appbar-name { font-weight: 700; color: var(--muted); }
+
+/* Pagina di scelta dell'app */
+.choose { padding-top: max(32px, env(safe-area-inset-top)); padding-bottom: 32px; display: flex; flex-direction: column; gap: 18px; }
+.choose-head { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.choose-head img { border-radius: 18px; box-shadow: var(--shadow); }
+.choices { display: flex; flex-direction: column; gap: 12px; }
+.choice {
+  display: flex; align-items: center; gap: 14px; padding: 18px 16px;
+  color: inherit; text-decoration: none;
+  background: var(--surface); border: 1px solid var(--line); border-left: 6px solid var(--accent);
+  border-radius: var(--radius); box-shadow: var(--shadow);
+}
+.choice.plus { border-left-color: var(--basil); }
+.choice-icon { font-size: 2.2rem; flex-shrink: 0; width: 56px; height: 56px; display: grid; place-items: center; background: var(--surface-2); border-radius: 14px; }
+.choice-body { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.choice-body strong { font-size: 1.2rem; }
+.choice-body span { color: var(--muted); font-size: 0.92rem; }
 
 .page { display: flex; flex-direction: column; gap: 14px; }
 .loading, .center { text-align: center; }
@@ -428,3 +458,5 @@ button.star { font-size: 1.7rem; background: none; border: 0; padding: 2px 3px; 
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+.model-switch { margin-top: 12px; }

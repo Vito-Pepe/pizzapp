@@ -1,9 +1,9 @@
-// Base dell'interfaccia: elementi, dati dal Pi, navigazione, finestre e messaggi.
-// Le viste (calcola, diario, farine, ...) si registrano con App.vista(nome, funzione).
+// Base comune di Impasti e ImpastiPLUS: elementi, dati dal Pi, navigazione, finestre e messaggi.
+// Ogni app indica le sue schede con App.configura e registra le viste con App.vista(nome, funzione).
 (function () {
   "use strict";
 
-  const C = window.Calcoli;
+  const C = window.Calcoli || null;
 
   // --- Elementi ---
 
@@ -64,7 +64,7 @@
   // --- Dati sul Pi ---
 
   async function chiama(metodo, percorso, corpo) {
-    const r = await fetch(`api/${percorso}`, {
+    const r = await fetch(`/api/${percorso}`, {
       method: metodo,
       headers: corpo !== undefined ? { "Content-Type": "application/json" } : {},
       body: corpo !== undefined ? JSON.stringify(corpo) : undefined,
@@ -107,17 +107,28 @@
     }
   }
 
+  // Il server unisce le chiavi inviate a quelle che ha: ogni app manda solo le sue
+  // (Impasti le chiavi principali, ImpastiPLUS la chiave "plus"), così non si sovrascrivono a vicenda.
   async function salvaImpostazioni(valori) {
-    dati.impostazioni = valori;
+    const { plus, ...proprie } = valori;
+    await inviaImpostazioni(proprie);
+  }
+
+  async function salvaImpostazioniPlus(valori) {
+    await inviaImpostazioni({ plus: valori });
+  }
+
+  async function inviaImpostazioni(parte) {
+    dati.impostazioni = { ...dati.impostazioni, ...parte };
     try {
-      dati.impostazioni = await chiama("PUT", "impostazioni", valori);
+      dati.impostazioni = await chiama("PUT", "impostazioni", parte);
     } catch (e) {
       avviso(`Impostazioni non salvate: ${e.message}`, "errore");
     }
   }
 
   function impostazioni() {
-    return { tempAmbiente: 20, tempFrigo: 4, sale: 25, lievito: "fresco", oreRinfrescoMadre: 4, ...dati.impostazioni };
+    return { tempAmbiente: 20, tempFrigo: 4, sale: 25, lievito: "fresco", oreRinfrescoMadre: 4, modello: "impasti", coeffPizzapp: 1, ...dati.impostazioni };
   }
 
   function farineDb() {
@@ -318,14 +329,18 @@
   // --- Navigazione ---
 
   const viste = {};
-  const SCHEDE = [
-    { id: "calcola", testo: "Calcola", icona: "🧮" },
-    { id: "pianifica", testo: "Pianifica", icona: "⏰" },
-    { id: "diario", testo: "Diario", icona: "📒" },
-    { id: "farine", testo: "Farine", icona: "🌾" },
-    { id: "altro", testo: "Altro", icona: "☰" },
-  ];
-  const SCHEDA_DI = { madre: "altro", statistiche: "altro", impostazioni: "altro" };
+  let SCHEDE = [];
+  let SCHEDA_DI = {};
+  let NOME_APP = "";
+  let PRIMA = "";
+
+  // schede: [{id, testo, icona}]; schedaDi: vista -> scheda da evidenziare; prima: vista iniziale
+  function configura({ nome, schede, schedaDi = {}, prima }) {
+    NOME_APP = nome;
+    SCHEDE = schede;
+    SCHEDA_DI = schedaDi;
+    PRIMA = prima || schede[0].id;
+  }
 
   function vista(nome, fn) {
     viste[nome] = fn;
@@ -337,9 +352,9 @@
   }
 
   function mostra() {
-    const [nome = "calcola", ...resto] = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-    const fn = viste[nome] || viste.calcola;
-    const scheda = SCHEDA_DI[nome] || (viste[nome] ? nome : "calcola");
+    const [nome = PRIMA, ...resto] = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+    const fn = viste[nome] || viste[PRIMA];
+    const scheda = SCHEDA_DI[nome] || (viste[nome] ? nome : PRIMA);
     document.querySelectorAll(".tab").forEach((t) => {
       if (t.dataset.scheda === scheda) t.setAttribute("aria-current", "page");
       else t.removeAttribute("aria-current");
@@ -348,7 +363,8 @@
     main.textContent = "";
     const contenuto = fn(...resto.map(decodeURIComponent));
     main.append(contenuto);
-    document.title = `${main.querySelector("h1")?.textContent || "Impasti"} · Impasti`;
+    const titolo = main.querySelector("h1")?.textContent;
+    document.title = titolo && titolo !== NOME_APP ? `${titolo} · ${NOME_APP}` : NOME_APP;
     window.scrollTo(0, 0);
   }
 
@@ -365,7 +381,7 @@
   }
 
   window.App = {
-    C, h, s, leggiLocale, scriviLocale, dati, carica, salva, elimina, salvaImpostazioni, impostazioni, farineDb, nuovoId, chiama,
+    C, h, s, leggiLocale, scriviLocale, dati, carica, salva, elimina, salvaImpostazioni, salvaImpostazioniPlus, impostazioni, farineDb, nuovoId, chiama, configura,
     giornoOra, data, relativo, ore, perInputData, avviso, finestra, conferma,
     prendi, metti, campoNumero, sceltaPulsanti, interruttore, stelle, vuoto,
     vista, vai, mostra, disegnaSchede, testata,

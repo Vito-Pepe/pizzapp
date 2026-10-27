@@ -48,7 +48,7 @@
       const aggiorna = () => {
         salvaBozze();
         risultatoBox.textContent = "";
-        risultatoBox.append(vistaRisultato(calcolaInput(bozza()), { azioni: true }));
+        risultatoBox.append(vistaRisultato(calcolaInput(bozza()), { azioni: true, ricalcola: aggiorna }));
       };
       corpo.append(h("p", { class: "hint style-desc" }, C.STILI[bozze.stile].descrizione), modulo(bozza(), aggiorna, disegna), risultatoBox);
       aggiorna();
@@ -241,7 +241,9 @@
     return fasi.map((f) => `${C.NOMI_FASI[f.fase].split(" (")[0]} ${App.ore(f.ore)} a ${f.temp} °C`).join(" → ");
   }
 
-  function vistaRisultato(r, { azioni = false, ricetta = null } = {}) {
+  const NOMI_MODELLI = { impasti: "Impasti (curva modificabile)", pizzapp: "PizzApp" };
+
+  function vistaRisultato(r, { azioni = false, ricetta = null, ricalcola = null } = {}) {
     const box = h("section", { class: "panel result", "aria-label": "Dosi" });
     box.append(h("div", { class: "result-head" },
       h("h2", null, "Dosi"),
@@ -278,7 +280,7 @@
         r.zucchero ? rigaIngrediente("Zucchero o malto", r.zucchero) : null,
         r.madre
           ? rigaIngrediente("Lievito madre", r.madre.grammi, `${C.formatta(r.madre.percentuale, 0)}%${r.input.madre?.percentuale == null ? " (suggerito)" : ""}`, "yeast")
-          : rigaIngrediente(nomeLievito(r.lievito.tipo), r.lievito.grammi, `${C.formatta(r.lievito.tipo === "secco" ? r.lievito.doseFresco / 3 : r.lievito.doseFresco, 2)} g/kg`, "yeast"),
+          : rigaIngrediente(nomeLievito(r.lievito.tipo), r.lievito.grammi, `${C.formatta(r.lievito.dose ?? (r.lievito.tipo === "secco" ? r.lievito.doseFresco / 3 : r.lievito.doseFresco), 2)} g/kg`, "yeast"),
         h("tr", { class: "total" }, h("th", { scope: "row" }, "Totale"), cella(`${C.grammi(r.totale)} g`, "num"), cella("", "note")),
       ]));
     }
@@ -287,7 +289,22 @@
     if (r.avvisi.length) box.append(h("ul", { class: "warnings" }, r.avvisi.map((a) => h("li", null, a))));
 
     box.append(h("div", { class: "phases-line" }, h("strong", null, `${r.biga ? "Dopo l'impasto finale" : "Lievitazione"}: ${App.ore(r.oreTotali)}`), h("span", null, testoFasi(r.fasi))));
-    if (!r.biga) box.append(h("p", { class: "hint" }, `Equivale a ${C.formatta(r.oreEquivalenti, 1)} ore a 20 °C. La dose di lievito è un'indicazione: la curva si ritocca in Altro → Impostazioni.`));
+    if (!r.biga) {
+      const modello = r.modello || "impasti";
+      if (ricalcola) {
+        // Si cambia al volo per confrontare: la scelta vale anche per le prossime ricette
+        box.append(h("div", { class: "model-switch" }, App.sceltaPulsanti({
+          etichetta: "Modello del lievito", valore: modello,
+          opzioni: [{ valore: "impasti", testo: "Impasti" }, { valore: "pizzapp", testo: "PizzApp" }],
+          cambia: async (v) => { await App.salvaImpostazioni({ ...App.impostazioni(), modello: v }); ricalcola(); },
+        })));
+      } else {
+        box.append(h("p", { class: "hint" }, `Lievito calcolato con il modello ${NOMI_MODELLI[modello]}.`));
+      }
+      box.append(h("p", { class: "hint" }, modello === "pizzapp"
+        ? `Equivale a ${C.formatta(r.oreEquivalenti, 1)} ore a 20 °C secondo PizzApp.${r.coeffPizzapp !== 1 ? ` Ritocco: ${r.coeffPizzapp > 1 ? "+" : ""}${Math.round((r.coeffPizzapp - 1) * 100)}%.` : ""} Il ritocco da −50% a +50% è in Altro → Impostazioni.`
+        : `Equivale a ${C.formatta(r.oreEquivalenti, 1)} ore a 20 °C. La dose di lievito è un'indicazione: la curva si ritocca in Altro → Impostazioni.`));
+    }
 
     box.append(grafici(r));
 
@@ -308,14 +325,15 @@
 
   function grafici(r) {
     const box = h("div", { class: "charts" });
-    const imp = App.impostazioni();
+    // Il grafico segue il modello con cui è stata calcolata la ricetta
+    const imp = { ...App.impostazioni(), modello: r.modello || "impasti" };
     if (!r.biga && r.lievito.tipo !== "madre") {
-      const base = C.doseDaCurva(r.oreEquivalenti, imp.curva);
+      const base = C.doseBase(r.oreEquivalenti, imp);
       const correzione = base ? r.lievito.doseFresco / base : 1;
       const xMax = Math.max(72, Math.ceil(r.oreEquivalenti * 1.25));
       const punti = [];
-      for (let x = 2; x <= xMax; x += 0.5) punti.push({ x, y: C.doseDaCurva(x, imp.curva) * correzione });
-      const yMax = Math.max(C.doseDaCurva(4, imp.curva) * correzione, r.lievito.doseFresco * 1.3);
+      for (let x = 2; x <= xMax; x += 0.5) punti.push({ x, y: C.doseBase(x, imp) * correzione });
+      const yMax = Math.max(C.doseBase(4, imp) * correzione, r.lievito.doseFresco * 1.3);
       box.append(G.linea({
         titolo: "Lievito fresco in base alla durata (g per kg di farina, ore a 20 °C)",
         punti, xMin: 2, xMax, yMax,
@@ -324,7 +342,7 @@
         descrivi: (p) => `${C.formatta(p.x, 1)} ore → ${C.formatta(p.y, 2)} g/kg`,
         marcatore: { x: r.oreEquivalenti, y: r.lievito.doseFresco, etichetta: `La tua: ${C.formatta(r.lievito.doseFresco, 1)} g/kg` },
         intestazioni: ["Ore a 20 °C", "g/kg"],
-        righe: C.ORE_CURVA_TABELLA.map((o) => [C.formatta(o, 0), C.formatta(C.doseDaCurva(o, imp.curva) * correzione, 2)]),
+        righe: C.ORE_CURVA_TABELLA.map((o) => [C.formatta(o, 0), C.formatta(C.doseBase(o, imp) * correzione, 2)]),
       }));
     }
     if (r.fasi.length) {

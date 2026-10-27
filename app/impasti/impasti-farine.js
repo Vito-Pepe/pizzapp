@@ -166,7 +166,7 @@
     if (window.ZXing) return Promise.resolve();
     if (!zxingPronto) {
       zxingPronto = new Promise((ok, ko) => {
-        const sc = h("script", { src: "vendor/zxing-0.21.3.min.js" });
+        const sc = h("script", { src: "/vendor/zxing-0.21.3.min.js" });
         sc.onload = ok;
         sc.onerror = () => { zxingPronto = null; ko(new Error("Lettore non caricato")); };
         document.head.append(sc);

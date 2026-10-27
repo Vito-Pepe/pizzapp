@@ -1,0 +1,16 @@
+{
+  "name": "ImpastiPLUS",
+  "short_name": "ImpastiPLUS",
+  "description": "Il calcolatore completo delle dosi per l'impasto della pizza",
+  "lang": "it",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf7f0",
+  "theme_color": "#2e7d4f",
+  "icons": [
+    { "src": "/icona.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/icona-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icona-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}

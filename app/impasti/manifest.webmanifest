@@ -1,0 +1,16 @@
+{
+  "name": "Impasti",
+  "short_name": "Impasti",
+  "description": "Calcolatore e diario degli impasti per la pizza",
+  "lang": "it",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fbf7f0",
+  "theme_color": "#c8402b",
+  "icons": [
+    { "src": "/icona.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "/icona-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "/icona-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}

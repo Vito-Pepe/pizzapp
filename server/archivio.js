@@ -1,10 +1,11 @@
 // Archivio dei dati in un file JSON nel volume Docker (/data/impasti.json).
 // Ogni scrittura passa da un file temporaneo e un rename, così il file non resta mai a metà.
-// Una copia per giorno in /data/backup (le ultime 14).
+// Una copia per giorno in /data/backup (le ultime 14). Le foto delle ricette di ImpastiPLUS stanno in /data/foto.
 const fs = require("node:fs");
 const path = require("node:path");
 
-const COLLEZIONI = ["ricette", "farine", "madri"];
+// ricette, farine, madri: Impasti; plus: ricette di ImpastiPLUS
+const COLLEZIONI = ["ricette", "farine", "madri", "plus"];
 const GIORNI_BACKUP = 14;
 
 // Farine generiche di partenza: tipi, non marche. Si possono modificare o eliminare.
@@ -22,11 +23,11 @@ function statoIniziale() {
   const ora = new Date().toISOString();
   const farine = {};
   FARINE_INIZIALI.forEach((f) => { farine[f.id] = { ...f, marca: "", preferita: false, creata: ora, aggiornata: ora }; });
-  return { versione: 1, ricette: {}, farine, madri: {}, impostazioni: {} };
+  return { versione: 1, ricette: {}, farine, madri: {}, plus: {}, impostazioni: {} };
 }
 
 function normalizza(dati) {
-  const stato = { versione: 1, ricette: {}, farine: {}, madri: {}, impostazioni: {} };
+  const stato = { versione: 1, ricette: {}, farine: {}, madri: {}, plus: {}, impostazioni: {} };
   if (!dati || typeof dati !== "object") return stato;
   COLLEZIONI.forEach((c) => {
     const v = dati[c];
@@ -49,8 +50,10 @@ class Archivio {
     this.cartella = cartella;
     this.file = path.join(cartella, "impasti.json");
     this.cartellaBackup = path.join(cartella, "backup");
+    this.cartellaFoto = path.join(cartella, "foto");
     this.coda = Promise.resolve();
     fs.mkdirSync(this.cartellaBackup, { recursive: true });
+    fs.mkdirSync(this.cartellaFoto, { recursive: true });
     if (fs.existsSync(this.file)) {
       this.stato = normalizza(JSON.parse(fs.readFileSync(this.file, "utf8")));
     } else {
@@ -106,9 +109,30 @@ class Archivio {
     return this.salva().then(() => esisteva);
   }
 
+  // Unisce le chiavi ricevute a quelle salvate: Impasti e ImpastiPLUS mandano ognuna solo le sue
   impostazioni(valori) {
-    this.stato.impostazioni = valori;
+    this.stato.impostazioni = { ...this.stato.impostazioni, ...valori };
     return this.salva().then(() => this.stato.impostazioni);
+  }
+
+  // --- Foto (JPEG) ---
+
+  percorsoFoto(id) {
+    return idValido(id) ? path.join(this.cartellaFoto, `${id}.jpg`) : null;
+  }
+
+  salvaFoto(id, dati) {
+    const file = this.percorsoFoto(id);
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, dati);
+    fs.renameSync(tmp, file);
+  }
+
+  eliminaFoto(id) {
+    const file = this.percorsoFoto(id);
+    if (!file || !fs.existsSync(file)) return false;
+    fs.unlinkSync(file);
+    return true;
   }
 
   // "sostituisci": i dati importati prendono il posto di tutto; "unisci": si aggiungono, a parità di id vince l'importato
@@ -120,7 +144,7 @@ class Archivio {
       COLLEZIONI.forEach((c) => Object.assign(this.stato[c], nuovi[c]));
       if (Object.keys(nuovi.impostazioni).length) this.stato.impostazioni = { ...this.stato.impostazioni, ...nuovi.impostazioni };
     }
-    return this.salva().then(() => ({ ricette: Object.keys(nuovi.ricette).length, farine: Object.keys(nuovi.farine).length, madri: Object.keys(nuovi.madri).length }));
+    return this.salva().then(() => ({ ricette: Object.keys(nuovi.ricette).length, farine: Object.keys(nuovi.farine).length, madri: Object.keys(nuovi.madri).length, plus: Object.keys(nuovi.plus).length }));
   }
 }
 
