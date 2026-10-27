@@ -1,0 +1,9 @@
+{
+  "name": "pizzapp",
+  "private": true,
+  "description": "Impasti: calcolatore e diario degli impasti per la pizza",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test test/*.test.js"
+  }
+}

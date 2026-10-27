@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#c8402b">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Impasti">
+  <meta name="description" content="Calcolatore e diario degli impasti per la pizza">
+  <title>Impasti</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icona.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icona-180.png">
+  <link rel="stylesheet" href="impasti.css">
+</head>
+<body>
+  <div class="app">
+    <main id="vista" class="main"></main>
+  </div>
+  <nav id="schede" class="tabs" aria-label="Sezioni"></nav>
+  <div id="avviso" class="toast" role="status" hidden></div>
+  <noscript><p class="noscript">Per usare Impasti attiva JavaScript nel browser.</p></noscript>
+
+  <script src="impasti-calcoli.js"></script>
+  <script src="impasti-base.js"></script>
+  <script src="impasti-grafici.js"></script>
+  <script src="impasti-condividi.js"></script>
+  <script src="impasti-calcola.js"></script>
+  <script src="impasti-diario.js"></script>
+  <script src="impasti-farine.js"></script>
+  <script src="impasti-altro.js"></script>
+  <script src="impasti.js"></script>
+</body>
+</html>
