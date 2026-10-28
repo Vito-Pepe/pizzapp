@@ -19,15 +19,23 @@ Due app per l'impasto della pizza, in un solo container Docker sul Raspberry Pi.
   - **Personalizzata**: tutto a mano, con lievito fresco, secco o madre.
 
   Per ogni stile si può scegliere un mix di farine, e il calcolatore dà i grammi di ognuna e la forza (W) media, con un avviso se la farina è debole per i tempi scelti.
-- **Quanto tempo hai**: in ogni stile si scrivono le **ore dall'impasto al pasto**, oppure si sceglie 4, 6, 8, 12, 24 o 48 h, e se si usa il frigo. Il resto lo calcola l'app:
+- **Quanto tempo hai**: in ogni stile si scrivono le ore e si dice se si usa il frigo. L'interruttore **Come conti le ore** sceglie cosa vuol dire il numero:
+  - **Fino al pasto**: le ore dall'impasto a quando si mangia (scelte rapide 4, 6, 8, 12, 24, 48 h);
+  - **Solo lievitazione**: le ore della ricetta, come prima (6, 8, 12, 24, 48, 72 h); impasto e cottura si aggiungono.
+
+  Passando da un modo all'altro il numero cambia e le fasi restano quelle. L'ultima scelta vale anche per le bozze nuove. Il resto lo calcola l'app:
   - come dividere le fasi: puntata, frigo, appretto;
   - il lievito;
   - la farina consigliata (W) per quei tempi;
-  - il **programma**: cosa fare e dopo quante ore dall'inizio dell'impasto, fino a "a tavola".
+  - il **programma**: cosa fare e dopo quanto dall'inizio dell'impasto, fino a "a tavola", passo per passo:
+    - l'impasto in quattro momenti, con i grammi;
+    - le pieghe ogni 20 minuti negli impasti molto idratati;
+    - i panetti con numero e peso, e un controllo a metà appretto;
+    - quando accendere il forno (secondo il forno), il condimento e la cottura.
 
   In Biga, Teglia e Personalizzata le fasi si possono anche scrivere a mano ("Fase per fase"). Passando da un modo all'altro si parte da quello che c'era.
 - **Lievito in base a ore e temperatura**: le fasi (puntata, frigo, appretto) diventano "ore a 20 °C" e la dose viene da una curva. Ci sono due grafici, la curva con la tua ricetta e la temperatura durante la lievitazione.
-- **Pianifica**: "a che ora vuoi mangiare?" dà l'ora d'inizio, i passi (impasta, frigo, panetti, accendi il forno, inforna) con giorno e ora, e le fasi in barre. C'è anche la modalità "inizio adesso".
+- **Pianifica**: "a che ora vuoi mangiare?" dà l'ora d'inizio, gli stessi passi del programma con giorno e ora, e le fasi in barre. C'è anche la modalità "inizio adesso".
 - **Diario**:
   - ricette salvate con le dosi, preferite, ricerca, note;
   - "Ho cotto questa pizza": voti (sapore, stesura, cottura) e problemi (si strappava, pallida, fondo bruciato…), con i consigli per la volta dopo;
@@ -93,7 +101,14 @@ Il calcolo completo è in `app/impastiplus/plus-calcoli.js`, i test in `test/plu
   - **Con il frigo** (da 11 ore in su): 1 ora di puntata, poi il frigo, poi 4 ore di appretto (5 se la lievitazione supera le 30 ore, 3 in teglia).
   - **Senza frigo**: 2 ore di puntata (1 sotto le 6 ore di lievitazione e dopo una biga, mezz'ora sotto le 3), il resto di appretto.
   - La **Verace** lievita solo a temperatura ambiente, da 7 a 25 ore dall'impasto al pasto.
-  - Le ricette Pizza Facile e Verace salvate prima contavano solo le ore di lievitazione: si riaprono con un'ora in più e le stesse dosi.
+  - Con **Solo lievitazione** il numero è la lievitazione: un'ora in meno delle ore fino al pasto, con le stesse fasi.
+  - Le ricette Pizza Facile e Verace salvate prima contavano solo le ore di lievitazione: si riaprono in **Solo lievitazione**, con lo stesso numero e le stesse dosi.
+- **Passi del programma** (`passiDettagliati` in `impasti-calcoli.js`):
+  - l'impasto in quattro momenti: a 0, 5, 10 e 15 minuti;
+  - con il 70% d'acqua o più, e in teglia, le pieghe durante la puntata: una ogni 20 minuti, al massimo tre, l'ultima almeno 10 minuti prima della fine;
+  - con almeno 2 ore di appretto, un controllo a metà;
+  - il forno si accende 1 ora prima (di casa e teglia), 30 minuti prima (fornetto) o 1 ora e mezza prima (a legna);
+  - il condimento si prepara mezz'ora prima.
 
 Le dosi di lievito sono indicazioni: farina, temperatura vera e forno fanno la differenza. Se i tuoi impasti lievitano sempre troppo o troppo poco, ritocca la curva in **Altro → Impostazioni**: vale per tutte le ricette nuove.
 

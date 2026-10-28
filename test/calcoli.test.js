@@ -3,6 +3,11 @@ const assert = require("node:assert/strict");
 const C = require("../app/impasti/impasti-calcoli.js");
 
 const vicino = (a, b, tolleranza, msg) => assert.ok(Math.abs(a - b) <= tolleranza, `${msg || ""} ${a} invece di ${b}`);
+// Il programma con gli spazi normali al posto di quelli che non vanno a capo (tra numero e g)
+const programma = (r) => {
+  const p = C.programma(r);
+  return { ...p, passi: p.passi.map((x) => ({ ...x, testo: x.testo.replace(/\u00a0/g, " ") })) };
+};
 
 // Tutti gli ingredienti messi insieme devono dare il peso dell'impasto
 function sommaIngredienti(r) {
@@ -132,8 +137,8 @@ test("pianificazione all'indietro dall'ora in cui si mangia", () => {
   assert.equal(p.fine.getTime(), mangiare.getTime());
   assert.equal(p.ore, 0.5 + 26 + 0.5);
   assert.equal(p.inizio.getTime(), mangiare.getTime() - 27 * 3600000);
-  const testi = p.passi.map((x) => x.testo);
-  assert.ok(testi.some((t) => t.startsWith("Fai i panetti e mettili in frigo")));
+  const testi = p.passi.map((x) => x.testo.replace(/\u00a0/g, " "));
+  assert.ok(testi.some((t) => /^Fai 4 panetti da 250 g e mettili in frigo/.test(t)), testi.join(" | "));
   assert.ok(testi.some((t) => t.startsWith("Accendi il forno")));
   for (let i = 1; i < p.passi.length; i++) assert.ok(p.passi[i].quando >= p.passi[i - 1].quando, "passi in ordine");
 });
@@ -206,9 +211,9 @@ test("tempo a disposizione: Pizza Facile e Verace salvate prima danno le stesse 
 test("programma: i passi in ore dall'impasto", () => {
   const r = C.calcola({ stile: "facile", forno: "casa", tempo: { modo: "ore", ore: 24, frigo: true } });
   const p = C.programma(r);
-  const quando = (inizio) => p.passi.find((x) => x.testo.startsWith(inizio))?.dopo;
+  const quando = (inizio) => p.passi.find((x) => x.testo.replace(/\u00a0/g, " ").startsWith(inizio))?.dopo;
   assert.equal(quando("Impasta"), 0);
-  assert.equal(quando("Fai i panetti e mettili in frigo"), 1.5);
+  assert.equal(quando("Fai 4 panetti da 250 g e mettili in frigo"), 1.5);
   assert.equal(quando("Togli i panetti dal frigo"), 19.5);
   assert.equal(quando("Accendi il forno"), 22.5);
   assert.equal(quando("Stendi"), 23.5);
@@ -218,6 +223,68 @@ test("programma: i passi in ore dall'impasto", () => {
   assert.equal(biga.passi[0].dopo, -18);
   assert.ok(biga.passi[0].testo.startsWith("Prepara la biga"));
   assert.equal(biga.pasto, 6);
+});
+
+test("passi dettagliati: impasto in quattro momenti con i grammi, panetti, controllo, forno e condimento", () => {
+  const r = C.calcola({ stile: "facile", panetti: 6, peso: 250, forno: "casa", tempo: { modo: "ore", ore: 8, frigo: false } });
+  const p = programma(r);
+  const quando = (re) => p.passi.find((x) => re.test(x.testo))?.dopo;
+  const minuti = (ore) => Math.round(ore * 60);
+  assert.equal(minuti(quando(/^Impasta: sciogli il lievito fresco \(\d,\d g\) in \d+ g d'acqua/)), 0);
+  assert.equal(minuti(quando(/^Aggiungi la farina poco per volta: \d+ g/)), 5);
+  assert.equal(minuti(quando(/^Aggiungi il sale: \d+ g, poi l'olio: \d+ g/)), 10, "forno di casa: c'è l'olio");
+  assert.equal(minuti(quando(/^Impasta finché è liscio/)), 15);
+  assert.equal(minuti(quando(/^Copri l'impasto/)), 30);
+  assert.equal(quando(/^Fai 6 panetti da 250 g$/), 2.5, "staglio dopo la puntata di 2 ore");
+  assert.equal(quando(/^Controlla i panetti/), 2.5 + 2.5, "a metà dei 5 h di appretto");
+  assert.equal(quando(/^Accendi il forno al massimo/), 6.5, "un'ora prima");
+  assert.equal(quando(/^Prepara il condimento/), 7);
+  assert.equal(quando(/^Stendi la prima pizza/), 7.5);
+  assert.ok(p.passi.find((x) => x.testo.startsWith("Stendi la prima")).nota.includes("6-8 minuti"));
+  assert.ok(p.passi.every((x) => typeof x.testo === "string" && x.testo.length > 5));
+  for (let i = 1; i < p.passi.length; i++) assert.ok(p.passi[i].dopo >= p.passi[i - 1].dopo, "in ordine");
+  assert.ok(!p.passi.some((x) => /pieghe/.test(x.testo)), "al 67% niente pieghe");
+  // Impasto idratato: pieghe ogni 20 minuti nella puntata; fornetto e forno a legna con i loro tempi
+  const idratato = programma(C.calcola({ stile: "personalizzata", idratazione: 72, forno: "fornetto", tempo: { modo: "ore", ore: 24, frigo: true } }));
+  const pieghe = idratato.passi.filter((x) => /giro di pieghe/.test(x.testo)).map((x) => minuti(x.dopo));
+  assert.deepEqual(pieghe, [50, 70], "puntata di un'ora dopo la mezz'ora d'impasto: pieghe a 20 e 40 minuti");
+  assert.equal(idratato.passi.find((x) => x.testo.startsWith("Accendi il fornetto")).dopo, 23.5 - 0.5);
+  const legna = programma(C.calcola({ stile: "verace", tempo: { modo: "ore", ore: 10 } }));
+  assert.equal(legna.passi.find((x) => x.testo.startsWith("Accendi il forno a legna")).dopo, 9.5 - 1.5);
+  assert.ok(legna.passi.find((x) => x.testo.startsWith("Stendi")).nota.includes("60-90 secondi"));
+  // Teglia: panetti uno per teglia, pieghe e cottura in teglia
+  const teglia = programma(C.calcola({ stile: "teglia", teglia: { forma: "rettangolare", lato1: 30, lato2: 40, numero: 2, grammatura: 0.55 }, tempo: { modo: "ore", ore: 30, frigo: true } }));
+  assert.ok(teglia.passi.some((x) => /^Fai 2 panetti da 660 g \(uno per teglia\) e mettili in frigo/.test(x.testo)), teglia.passi.map((x) => x.testo).join(" | "));
+  assert.ok(teglia.passi.some((x) => /giro di pieghe/.test(x.testo)));
+  assert.ok(teglia.passi.some((x) => x.testo.startsWith("Stendi l'impasto nella teglia")));
+  // Biga e lievito madre: i loro grammi nei passi
+  const biga = C.calcola({ stile: "biga", tempo: { modo: "ore", ore: 6 } });
+  const pb = programma(biga);
+  assert.ok(pb.passi[0].testo.includes(`${C.grammi(biga.biga.farina)} g di farina`));
+  assert.ok(pb.passi.some((x) => /^Impasto finale: spezzetta la biga/.test(x.testo)));
+  const madre = C.calcola({ stile: "personalizzata", lievito: "madre", tempo: { modo: "ore", ore: 10 } });
+  const pm = programma(madre);
+  assert.ok(pm.passi[0].testo.startsWith(`Rinfresca il lievito madre: te ne servono ${C.grammi(madre.madre.grammi)} g`));
+  assert.ok(pm.passi.some((x) => x.testo.startsWith(`Impasta: sciogli il lievito madre (${C.grammi(madre.madre.grammi)} g)`)));
+});
+
+test("ore contate in due modi: fino al pasto o solo lievitazione (come prima)", () => {
+  assert.deepEqual(C.limitiTempo("facile", "lievitazione"), { min: 2, max: 95, frigoDa: 10 });
+  assert.deepEqual(C.limitiTempo("verace", "lievitazione"), { min: 6, max: 24, frigoDa: 10 });
+  assert.equal(C.convertiOre(24, "pasto", "lievitazione"), 23);
+  assert.equal(C.convertiOre(23, "lievitazione", "pasto"), 24);
+  assert.equal(C.convertiOre(8, "pasto", "pasto"), 8);
+  // "24 ore di lievitazione" come la Pizza Facile di prima: stesse fasi, un'ora in più al pasto
+  for (const [ore, frigo] of [[24, true], [8, false], [48, true], [10, true]]) {
+    const prima = C.calcola({ stile: "facile", facile: { ore, frigo } });
+    const lievitazione = C.calcola({ stile: "facile", tempo: { modo: "ore", conta: "lievitazione", ore, frigo } });
+    const pasto = C.calcola({ stile: "facile", tempo: { modo: "ore", conta: "pasto", ore: C.convertiOre(ore, "lievitazione", "pasto"), frigo } });
+    assert.deepEqual(lievitazione.fasi, prima.fasi, `${ore} ore di lievitazione`);
+    assert.deepEqual(pasto.fasi, prima.fasi);
+    assert.equal(C.programma(lievitazione).pasto, ore + 1);
+  }
+  // Senza conta valgono le ore fino al pasto
+  assert.deepEqual(C.calcola({ stile: "facile", tempo: { modo: "ore", ore: 24, frigo: true } }).fasi.map((f) => f.ore), [1, 18, 4]);
 });
 
 test("consigli dopo la cottura", () => {
