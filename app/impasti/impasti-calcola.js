@@ -7,13 +7,18 @@
   const G = window.Grafici;
   const CHIAVE = "impasti-bozze";
   const CHIAVE_PIANO = "impasti-piano";
+  // Come si contano le ore l'ultima volta che si è scelto: vale per le bozze nuove
+  const CHIAVE_CONTA = "impasti-conta";
 
   // Una bozza per stile: cambiando stile non si perdono i valori degli altri
   const bozze = App.leggiLocale(CHIAVE, null) || { stile: "facile" };
   if (!C.STILI[bozze.stile]) bozze.stile = "facile";
 
   function bozza(stile = bozze.stile) {
-    if (!bozze[stile] || bozze[stile].stile !== stile) bozze[stile] = C.predefinito(stile, App.impostazioni());
+    if (!bozze[stile] || bozze[stile].stile !== stile) {
+      bozze[stile] = C.predefinito(stile, App.impostazioni());
+      if (bozze[stile].tempo && App.leggiLocale(CHIAVE_CONTA, null) === "lievitazione") bozze[stile].tempo.conta = "lievitazione";
+    }
     return bozze[stile];
   }
 
@@ -124,7 +129,7 @@
       const titolo = b.stile === "biga" ? "Dopo l'impasto finale" : "Lievitazione";
       const modo = App.sceltaPulsanti({
         etichetta: "Come decidi i tempi", valore: b.tempo.modo,
-        opzioni: [{ valore: "ore", testo: "Dalle ore che ho" }, { valore: "fasi", testo: "Fase per fase" }],
+        opzioni: [{ valore: "ore", testo: "Dalle ore" }, { valore: "fasi", testo: "Fase per fase" }],
         cambia: (v) => { cambiaModo(b, v, imp); salvaBozze(); ridisegna(); },
       });
       if (b.tempo.modo === "ore") {
@@ -153,11 +158,11 @@
   }
 
   // Le bozze di prima non hanno il tempo a disposizione: lo ricavo dai loro tempi. Pizza Facile
-  // e Verace contavano le ore di lievitazione, qui c'è anche l'ora per impastare e cuocere
+  // e Verace contavano le ore di lievitazione: restano così, con lo stesso numero
   function preparaTempo(b, imp) {
     if (!b.tempo) {
-      if (b.stile === "facile") b.tempo = { ore: (Number(b.facile?.ore) || 24) + 1, frigo: b.facile?.frigo ?? true };
-      else if (b.stile === "verace") b.tempo = { ore: (Number(b.verace?.ore) || 8) + 1, frigo: false };
+      if (b.stile === "facile") b.tempo = { conta: "lievitazione", ore: Number(b.facile?.ore) || 24, frigo: b.facile?.frigo ?? true };
+      else if (b.stile === "verace") b.tempo = { conta: "lievitazione", ore: Number(b.verace?.ore) || 8, frigo: false };
       else {
         const fasi = C.fasiLievitazione(b, imp);
         b.tempo = { modo: "fasi", ore: C.tempoDaFasi(fasi), frigo: fasi.some((f) => f.fase === "frigo") };
@@ -165,10 +170,11 @@
     }
     // Facile e Verace non hanno le fasi a mano
     if (b.stile === "facile" || b.stile === "verace" || !["ore", "fasi"].includes(b.tempo.modo)) b.tempo.modo = "ore";
+    if (b.tempo.conta !== "lievitazione") b.tempo.conta = "pasto";
   }
 
   // Passando da un modo all'altro si parte da quello che c'era: le fasi divise dalle ore, oppure
-  // le ore che fanno le fasi scritte a mano
+  // le ore che fanno le fasi scritte a mano (contate come si sta contando)
   function cambiaModo(b, modo, imp) {
     if (modo === b.tempo.modo) return;
     const fasi = C.fasiLievitazione(b, imp);
@@ -176,41 +182,59 @@
       const di = (id) => fasi.find((f) => f.fase === id);
       b.fasi = Object.fromEntries(["puntata", "frigo", "appretto"].map((id) => [id, { ore: di(id)?.ore || 0, temp: di(id)?.temp ?? (id === "frigo" ? imp.tempFrigo : imp.tempAmbiente) }]));
     } else {
-      const { min, max } = C.limitiTempo(b.stile);
-      b.tempo.ore = Math.min(Math.max(Math.round(C.tempoDaFasi(fasi) * 2) / 2, min), max);
+      const { min, max } = C.limitiTempo(b.stile, b.tempo.conta);
+      const ore = C.convertiOre(C.tempoDaFasi(fasi), "pasto", b.tempo.conta);
+      b.tempo.ore = Math.min(Math.max(Math.round(ore * 2) / 2, min), max);
       b.tempo.frigo = fasi.some((f) => f.fase === "frigo");
     }
     b.tempo.modo = modo;
   }
 
-  // Le ore dall'impasto al pasto, con le scelte rapide e il frigo; sotto, come le divido
+  // L'interruttore tra i due modi di contare le ore: il numero cambia, le fasi restano quelle
+  function cambiaConta(b, conta) {
+    if (conta === b.tempo.conta) return;
+    const { min, max } = C.limitiTempo(b.stile, conta);
+    b.tempo.ore = Math.min(Math.max(C.convertiOre(b.tempo.ore, b.tempo.conta, conta), min), max);
+    b.tempo.conta = conta;
+  }
+
+  // Le ore, fino al pasto o solo di lievitazione (come prima), con le scelte rapide e il frigo;
+  // sotto, come le divido
   function campiTempo(b, aggiorna, ridisegna) {
     const imp = App.impostazioni();
-    const { min, max } = C.limitiTempo(b.stile);
+    const conta = b.tempo.conta;
+    const { min, max, frigoDa } = C.limitiTempo(b.stile, conta);
     const verace = b.stile === "verace";
-    const rapide = (verace ? [8, 10, 12, 18, 24] : [4, 6, 8, 12, 24, 48]).map((o) => ({ valore: o, testo: `${o} h` }));
-    const scelte = App.sceltaPulsanti({ etichetta: "Scelte rapide", valore: b.tempo.ore, opzioni: rapide, cambia: (v) => { b.tempo.ore = v; salvaBozze(); ridisegna(); }, classe: "wrap rapide" });
+    const rapide = conta === "lievitazione" ? (verace ? [6, 8, 12, 18, 24] : [6, 8, 12, 24, 48, 72]) : verace ? [8, 10, 12, 18, 24] : [4, 6, 8, 12, 24, 48];
+    const interruttore = App.sceltaPulsanti({
+      etichetta: "Come conti le ore", valore: conta,
+      opzioni: [{ valore: "pasto", testo: "Fino al pasto" }, { valore: "lievitazione", testo: "Solo lievitazione" }],
+      cambia: (v) => { cambiaConta(b, v); App.scriviLocale(CHIAVE_CONTA, v); salvaBozze(); ridisegna(); },
+    });
+    const scelte = App.sceltaPulsanti({ etichetta: "Scelte rapide", valore: b.tempo.ore, opzioni: rapide.map((o) => ({ valore: o, testo: `${o} h` })), cambia: (v) => { b.tempo.ore = v; salvaBozze(); ridisegna(); }, classe: "wrap rapide" });
     const frigo = h("div");
     const divise = h("p", { class: "hint tempo-fasi" });
     const mostra = () => {
       scelte.querySelectorAll(".seg").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === Number(b.tempo.ore))));
       frigo.textContent = "";
       if (verace) frigo.append(h("p", { class: "hint" }, "La Verace lievita a temperatura ambiente, senza frigo."));
-      else if ((Number(b.tempo.ore) || 0) >= C.TEMPO.frigoDa) {
+      else if ((Number(b.tempo.ore) || 0) >= frigoDa) {
         frigo.append(App.interruttore({ etichetta: "Uso il frigo", aiuto: "Più ore in frigo, più sapore e digeribilità", valore: b.tempo.frigo, cambia: (v) => { b.tempo.frigo = v; aggiorna(); mostra(); } }));
         if (b.tempo.frigo && b.stile !== "facile") {
           frigo.append(App.sceltaPulsanti({ etichetta: "Quando fai i panetti", valore: b.staglio || "prima", opzioni: [{ valore: "prima", testo: "Prima del frigo" }, { valore: "dopo", testo: "Dopo il frigo" }], cambia: (v) => { b.staglio = v; aggiorna(); } }));
         }
-      } else frigo.append(h("p", { class: "hint" }, `Con meno di ${C.TEMPO.frigoDa} ore la lievitazione è tutta a temperatura ambiente.`));
-      divise.textContent = `Le divido così: impasto ${App.ore(C.TEMPO.impasto)} → ${testoFasi(C.fasiLievitazione(b, imp))} → stesura e cottura ${App.ore(C.TEMPO.cottura)}.`;
+      } else frigo.append(h("p", { class: "hint" }, `Con meno di ${frigoDa} ore la lievitazione è tutta a temperatura ambiente.`));
+      const fasi = C.fasiLievitazione(b, imp);
+      const totale = conta === "lievitazione" ? ` In tutto ${App.ore(C.tempoDaFasi(fasi))} dall'impasto al pasto.` : "";
+      divise.textContent = `Le divido così: impasto ${App.ore(C.TEMPO.impasto)} → ${testoFasi(fasi)} → stesura e cottura ${App.ore(C.TEMPO.cottura)}.${totale}`;
     };
-    const campo = App.campoNumero({
-      oggetto: b, percorso: "tempo.ore", etichetta: b.stile === "biga" ? "Ore dall'impasto finale al pasto" : "Ore dall'impasto al pasto", unita: "h",
-      min, max, passo: 0.5, aiuto: `Da ${min} a ${max} ore. Conto mezz'ora per impastare e mezz'ora per stendere e cuocere.`,
-      cambia: () => { aggiorna(); mostra(); },
-    });
+    const etichetta = conta === "lievitazione" ? "Ore di lievitazione" : b.stile === "biga" ? "Ore dall'impasto finale al pasto" : "Ore dall'impasto al pasto";
+    const aiuto = conta === "lievitazione"
+      ? `Da ${min} a ${max} ore, dalla fine dell'impasto alla cottura, come prima. In più ci sono mezz'ora per impastare e mezz'ora per stendere e cuocere.`
+      : `Da ${min} a ${max} ore. Conto mezz'ora per impastare e mezz'ora per stendere e cuocere.`;
+    const campo = App.campoNumero({ oggetto: b, percorso: "tempo.ore", etichetta, unita: "h", min, max, passo: 0.5, aiuto, cambia: () => { aggiorna(); mostra(); } });
     mostra();
-    return { elementi: [campo, scelte, frigo, divise], mostra };
+    return { elementi: [interruttore, campo, scelte, frigo, divise], mostra };
   }
 
   // Ingredienti e farine, in fondo al modulo
@@ -392,6 +416,11 @@
     return box;
   }
 
+  // Un passo: cosa fare e, sotto, come (la nota)
+  function testoPasso(p) {
+    return h("span", null, p.testo, p.nota ? h("span", { class: "step-nota" }, p.nota) : null);
+  }
+
   // Il programma in ore dall'inizio dell'impasto, per chi ha detto quante ore ha: cosa fare e
   // dopo quanto, fino al pasto. Con Pianifica gli stessi passi diventano ore del giorno.
   function vistaProgramma(r) {
@@ -400,7 +429,7 @@
     return h("div", { class: "program" },
       h("h3", null, `Il programma: ${App.ore(p.pasto)} dall'impasto al pasto`),
       h("ol", { class: "steps relativi" },
-        p.passi.map((x) => h("li", { class: "step" }, h("span", { class: "quando" }, quando(x.dopo)), h("span", null, x.testo))),
+        p.passi.map((x) => h("li", { class: "step" }, h("span", { class: "quando" }, quando(x.dopo)), testoPasso(x))),
         h("li", { class: "step" }, h("span", { class: "quando" }, quando(p.pasto)), h("span", null, "A tavola"))),
       h("p", { class: "hint" }, "Le ore contano dall'inizio dell'impasto. Con ⏰ Pianifica diventano ore del giorno."));
   }
@@ -546,7 +575,7 @@
         lista.append(h("li", { class: "step-day" }, q.giorno));
         giornoPrima = q.giorno;
       }
-      lista.append(h("li", { class: "step" }, h("time", { datetime: p.quando.toISOString() }, q.ora), h("span", null, p.testo)));
+      lista.append(h("li", { class: "step" }, h("time", { datetime: p.quando.toISOString() }, q.ora), testoPasso(p)));
     });
     box.append(h("section", { class: "panel" }, h("h2", null, "Cosa fare e quando"), lista));
 

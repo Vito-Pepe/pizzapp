@@ -100,10 +100,11 @@
     personalizzata: { nome: "Personalizzata", icona: "🧪", descrizione: "Tutti i valori a mano: idratazione, fasi, lievito e mix di farine" },
   };
 
+  // Per ogni forno anche quanto prima accenderlo (minuti) e quanto cuoce una pizza: indicazioni
   const FORNI = {
-    casa: { nome: "Forno di casa", idratazione: 67, olio: 20 },
-    fornetto: { nome: "Fornetto per pizza (400 °C)", idratazione: 63, olio: 0 },
-    legna: { nome: "Forno a legna", idratazione: 60, olio: 0 },
+    casa: { nome: "Forno di casa", idratazione: 67, olio: 20, scalda: 60, accendi: "Accendi il forno al massimo, con la pietra o la teglia dentro", cottura: "6-8 minuti al massimo, sulla pietra ben calda" },
+    fornetto: { nome: "Fornetto per pizza (400 °C)", idratazione: 63, olio: 0, scalda: 30, accendi: "Accendi il fornetto per pizza: in 20-30 minuti arriva a 400 °C", cottura: "60-90 secondi, girandola a metà" },
+    legna: { nome: "Forno a legna", idratazione: 60, olio: 0, scalda: 90, accendi: "Accendi il forno a legna: ci vuole almeno un'ora e mezza perché la platea arrivi a temperatura", cottura: "60-90 secondi, girandola" },
   };
 
   function predefinito(stile, imp = {}) {
@@ -171,17 +172,29 @@
     verace: { min: 7, max: 25 },
   };
 
-  function limitiTempo(stile) {
-    return stile === "verace" ? TEMPO.verace : { min: TEMPO.min, max: TEMPO.max };
+  // Le ore si contano in due modi (tempo.conta): "pasto", dall'impasto al pasto, oppure
+  // "lievitazione", solo le ore di lievitazione, come prima (impasto e cottura si aggiungono)
+  const EXTRA = TEMPO.impasto + TEMPO.cottura;
+
+  function limitiTempo(stile, conta = "pasto") {
+    const l = stile === "verace" ? TEMPO.verace : { min: TEMPO.min, max: TEMPO.max };
+    const meno = conta === "lievitazione" ? EXTRA : 0;
+    return { min: l.min - meno, max: l.max - meno, frigoDa: TEMPO.frigoDa - meno };
+  }
+
+  // Le ore che si scrivono, contate nell'altro modo (per l'interruttore: le fasi restano quelle)
+  function convertiOre(ore, da, a) {
+    if (da === a) return Number(ore) || 0;
+    return (Number(ore) || 0) + (a === "lievitazione" ? -EXTRA : EXTRA);
   }
 
   function usaTempo(input) {
     return input?.tempo?.modo === "ore";
   }
 
-  function fasiDaTempo({ ore, frigo, stile, ta = 20, tf = 4 }) {
+  function fasiDaTempo({ ore, frigo, stile, conta = "pasto", ta = 20, tf = 4 }) {
     const { min, max } = limitiTempo(stile);
-    const totale = Math.min(Math.max(Number(ore) || 0, min), max);
+    const totale = Math.min(Math.max(convertiOre(ore, conta, "pasto"), min), max);
     const lievitazione = totale - TEMPO.impasto - TEMPO.cottura;
     if (frigo && stile !== "verace" && totale >= TEMPO.frigoDa) {
       const appretto = stile === "teglia" ? 3 : lievitazione >= 30 ? 5 : 4;
@@ -211,7 +224,7 @@
     const tf = Number(imp.tempFrigo) || 4;
     if (usaTempo(input)) {
       const temp = input.stile === "verace" ? Number(input.verace?.temp) || ta : ta;
-      return fasiDaTempo({ ore: input.tempo.ore, frigo: Boolean(input.tempo.frigo), stile: input.stile, ta: temp, tf });
+      return fasiDaTempo({ ore: input.tempo.ore, frigo: Boolean(input.tempo.frigo), stile: input.stile, conta: input.tempo.conta, ta: temp, tf });
     }
     if (input.stile === "facile") {
       const ore = Math.max(Number(input.facile?.ore) || 24, 3);
@@ -484,29 +497,86 @@
       t += f.ore * 3600000;
       return b;
     });
-    const staglioPrima = risultato.input?.staglio !== "dopo";
+    const passi = passiDettagliati(risultato, barre);
+    passi.sort((a, b) => a.quando - b.quando);
+    return { barre, passi, inizio: new Date(t0), fine: new Date(t), ore: durata / 3600000 };
+  }
+
+  const MINUTO = 60000;
+  const ORDINALI = ["Primo", "Secondo", "Terzo"];
+
+  // Cosa fare, passo per passo, con i grammi della ricetta: l'impasto in quattro momenti, le
+  // pieghe se l'impasto è molto idratato (70% e più, e in teglia), i panetti con numero e peso,
+  // un controllo a metà appretto, il forno secondo il tipo, il condimento e la cottura.
+  // Ogni passo: { quando, testo, nota } (la nota spiega come, in breve).
+  function passiDettagliati(r, barre) {
     const passi = [];
-    const usaForno = risultato.input?.forno === "casa" || risultato.stile === "teglia";
+    const passo = (quando, testo, nota = null) => passi.push({ quando: new Date(quando), testo, nota });
+    // Spazio che non va a capo tra il numero e la g
+    const g = (n) => `${grammi(n)}\u00a0g`;
+    const staglioPrima = r.input?.staglio !== "dopo";
+    const teglia = Boolean(r.teglia);
+    const numero = teglia ? r.teglia.numero : Math.max(Math.round(Number(r.input?.panetti) || 1), 1);
+    const panetti = teglia
+      ? `${numero} ${numero === 1 ? "panetto" : "panetti"} da ${g(r.teglia.perTeglia)} (uno per teglia)`
+      : `${numero} ${numero === 1 ? "panetto" : "panetti"} da ${g(Number(r.input?.peso) || r.totale / numero)}`;
+    const forno = FORNI[teglia ? "casa" : r.input?.forno] || FORNI.casa;
+
     barre.forEach((b, i) => {
-      if (b.fase === "rinfrescoMadre") passi.push({ quando: b.inizio, testo: `Rinfresca il lievito madre: sarà al massimo in circa ${formatta(b.ore, 0)} ore` });
-      if (b.fase === "biga") passi.push({ quando: b.inizio, testo: `Prepara la biga e lasciala a ${b.temp} °C` });
-      if (b.fase === "impasto") passi.push({ quando: b.inizio, testo: risultato.biga ? "Impasto finale: unisci la biga con gli ingredienti del rinfresco" : "Impasta" });
-      if (b.fase === "puntata") passi.push({ quando: b.inizio, testo: `Copri l'impasto e lascialo a ${b.temp} °C` });
+      const t = b.inizio.getTime();
+      if (b.fase === "rinfrescoMadre") passo(t, `Rinfresca il lievito madre: te ne servono ${g(r.madre.grammi)}`, `Sarà al massimo in circa ${formatta(b.ore, 0)} ore, in un posto tiepido`);
+      if (b.fase === "biga") {
+        passo(t, `Prepara la biga: ${g(r.biga.farina)} di farina, ${g(r.biga.acqua)} d'acqua e ${g(r.biga.lievito)} di lievito fresco`, `Mescola appena, senza impastare: deve restare a grumi. Coprila e lasciala a ${b.temp} °C`);
+      }
+      if (b.fase === "impasto") passiImpasto(r, t, passo, g);
+      if (b.fase === "puntata") {
+        passo(t, `Copri l'impasto e lascialo a ${b.temp} °C`, "Puntata: l'impasto intero riposa nella ciotola");
+        // Pieghe ogni 20 minuti, al massimo tre, l'ultima almeno 10 minuti prima della fine
+        if (r.idratazione >= 70 || teglia) {
+          const giri = Math.min(3, Math.floor((b.ore * 60 - 10) / 20));
+          for (let k = 0; k < giri; k++) {
+            passo(t + (k + 1) * 20 * MINUTO, `${ORDINALI[k]} giro di pieghe`, k === 0 ? "Con le mani bagnate tira un lembo dell'impasto e ripiegalo sopra, girando la ciotola, per 4 volte; poi copri di nuovo" : null);
+          }
+        }
+      }
       if (b.fase === "frigo") {
-        passi.push({ quando: b.inizio, testo: staglioPrima ? "Fai i panetti e mettili in frigo, coperti" : "Metti l'impasto in frigo, coperto" });
-        passi.push({ quando: b.fine, testo: staglioPrima ? "Togli i panetti dal frigo" : "Togli l'impasto dal frigo" });
+        if (staglioPrima) passo(t, `Fai ${panetti} e mettili in frigo, coperti`, "Arrotondali bene e mettili distanziati in un contenitore chiuso");
+        else passo(t, "Metti l'impasto in frigo, coperto", "Nella ciotola chiusa, o in un contenitore con il coperchio");
+        const dopo = barre[i + 1];
+        passo(b.fine, staglioPrima ? "Togli i panetti dal frigo" : "Togli l'impasto dal frigo", dopo?.fase === "appretto" ? `In ${formatta(dopo.ore, dopo.ore % 1 ? 1 : 0)} ore tornano a temperatura e finiscono di lievitare` : null);
       }
       if (b.fase === "appretto") {
         const daFrigo = barre[i - 1]?.fase === "frigo";
-        if (!daFrigo || !staglioPrima) passi.push({ quando: b.inizio, testo: risultato.stile === "teglia" ? "Fai i panetti (uno per teglia) e lasciali riposare" : "Fai i panetti (staglio)" });
+        if (!daFrigo || !staglioPrima) passo(t, `Fai ${panetti}`, `Staglio: arrotondali bene, coprili e lasciali a ${b.temp} °C`);
+        if (b.ore >= 2) passo(t + (b.ore / 2) * 3600000, "Controlla i panetti", "Alla fine devono essere gonfi e morbidi, circa il doppio. Se crescono troppo in fretta mettili in un posto più fresco, se sono fermi in uno più caldo");
       }
       if (b.fase === "cottura") {
-        if (usaForno) passi.push({ quando: new Date(b.inizio.getTime() - 3600000), testo: "Accendi il forno al massimo, con la pietra o la teglia dentro" });
-        passi.push({ quando: b.inizio, testo: risultato.stile === "teglia" ? "Stendi nella teglia e inforna" : "Stendi, condisci e inforna" });
+        passo(t - forno.scalda * MINUTO, forno.accendi);
+        passo(t - 30 * MINUTO, "Prepara il condimento", "La mozzarella tagliata a scolare, il pomodoro condito, tutto a portata di mano");
+        if (teglia) passo(t, "Stendi l'impasto nella teglia, condisci e inforna", "15-20 minuti al massimo, prima nella parte bassa del forno");
+        else passo(t, numero > 1 ? "Stendi la prima pizza, condisci e inforna" : "Stendi la pizza, condisci e inforna", `Cottura: ${forno.cottura}.${numero > 1 ? " Poi le altre, una alla volta" : ""}`);
       }
     });
-    passi.sort((a, b) => a.quando - b.quando);
-    return { barre, passi, inizio: new Date(t0), fine: new Date(t), ore: durata / 3600000 };
+    return passi;
+  }
+
+  // L'impasto in quattro momenti: lievito nell'acqua, farina poco per volta, sale (e olio), impastare
+  function passiImpasto(r, t, passo, g) {
+    const lavora = ["Impasta finché è liscio ed elastico", "Circa 10 minuti a mano, qualcuno in meno con l'impastatrice"];
+    if (r.biga) {
+      const lievito = r.rinfresco.lievito ? ` e ${g(r.rinfresco.lievito)} di lievito fresco` : "";
+      passo(t, `Impasto finale: spezzetta la biga e aggiungi ${g(Math.max(r.rinfresco.acqua, 0))} d'acqua poco per volta${lievito}`);
+      if (r.rinfresco.farina >= 0.5) passo(t + 5 * MINUTO, `Aggiungi la farina rimasta: ${g(r.rinfresco.farina)}`);
+      passo(t + 10 * MINUTO, `Aggiungi il sale: ${g(r.rinfresco.sale)}${r.rinfresco.olio ? `, poi l'olio: ${g(r.rinfresco.olio)}` : ""}`);
+      passo(t + 15 * MINUTO, ...lavora);
+      return;
+    }
+    const lievito = r.madre ? `il lievito madre (${g(r.madre.grammi)})` : `il lievito ${r.lievito.tipo === "secco" ? "secco" : "fresco"} (${g(r.lievito.grammi)})`;
+    const zucchero = r.zucchero ? ` e lo zucchero o malto (${g(r.zucchero)})` : "";
+    passo(t, `Impasta: sciogli ${lievito}${zucchero} in ${g(Math.max(r.daAggiungere.acqua, 0))} d'acqua`, "Acqua a temperatura ambiente, più fresca d'estate");
+    passo(t + 5 * MINUTO, `Aggiungi la farina poco per volta: ${g(r.daAggiungere.farina)}`);
+    passo(t + 10 * MINUTO, `Aggiungi il sale: ${g(r.sale)}${r.olio ? `, poi l'olio: ${g(r.olio)}` : ""}`);
+    passo(t + 15 * MINUTO, ...lavora);
   }
 
   // Il programma senza orologio: ogni passo con le ore dall'inizio dell'impasto (prima, con il
@@ -515,7 +585,7 @@
     const piano = pianifica(risultato, { inizio: new Date(0) }, imp);
     const impasto = piano.barre.find((b) => b.fase === "impasto").inizio.getTime();
     const ore = (d) => (d.getTime() - impasto) / 3600000;
-    return { passi: piano.passi.map((p) => ({ dopo: ore(p.quando), testo: p.testo })), pasto: ore(piano.fine) };
+    return { passi: piano.passi.map((p) => ({ dopo: ore(p.quando), testo: p.testo, nota: p.nota })), pasto: ore(piano.fine) };
   }
 
   // --- Dopo la cottura: problemi e consigli ---
@@ -576,7 +646,7 @@
     velocita, oreEquivalenti, dosePredefinita, curvaPredefinita, curvaValida, doseDaCurva, doseLievito, madreSuggerita,
     ORE_CURVA_TABELLA: ORE_CURVA, modelloDi, oreEquivalentiModello, doseBase, LP,
     STILI, FORNI, predefinito, fasiLievitazione, calcola, mixFarine,
-    TEMPO, limitiTempo, usaTempo, fasiDaTempo, tempoDaFasi,
+    TEMPO, limitiTempo, convertiOre, usaTempo, fasiDaTempo, tempoDaFasi,
     intervalloW, stimaW, durataPerW, rinfrescoMadre,
     NOMI_FASI, fasiComplete, pianifica, programma, PROBLEMI, VOTI, consigliCottura,
     arrotonda, formatta, grammi,
