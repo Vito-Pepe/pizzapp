@@ -19,6 +19,13 @@ Due app per l'impasto della pizza, in un solo container Docker sul Raspberry Pi.
   - **Personalizzata**: tutto a mano, con lievito fresco, secco o madre.
 
   Per ogni stile si può scegliere un mix di farine, e il calcolatore dà i grammi di ognuna e la forza (W) media, con un avviso se la farina è debole per i tempi scelti.
+- **Quanto tempo hai**: in ogni stile si scrivono le **ore dall'impasto al pasto**, oppure si sceglie 4, 6, 8, 12, 24 o 48 h, e se si usa il frigo. Il resto lo calcola l'app:
+  - come dividere le fasi: puntata, frigo, appretto;
+  - il lievito;
+  - la farina consigliata (W) per quei tempi;
+  - il **programma**: cosa fare e dopo quante ore dall'inizio dell'impasto, fino a "a tavola".
+
+  In Biga, Teglia e Personalizzata le fasi si possono anche scrivere a mano ("Fase per fase"). Passando da un modo all'altro si parte da quello che c'era.
 - **Lievito in base a ore e temperatura**: le fasi (puntata, frigo, appretto) diventano "ore a 20 °C" e la dose viene da una curva. Ci sono due grafici, la curva con la tua ricetta e la temperatura durante la lievitazione.
 - **Pianifica**: "a che ora vuoi mangiare?" dà l'ora d'inizio, i passi (impasta, frigo, panetti, accendi il forno, inforna) con giorno e ora, e le fasi in barre. C'è anche la modalità "inizio adesso".
 - **Diario**:
@@ -82,6 +89,11 @@ Il calcolo completo è in `app/impastiplus/plus-calcoli.js`, i test in `test/plu
 - **Lievito secco**: un terzo del fresco.
 - **Lievito e temperatura**: ogni fase vale come le sue ore moltiplicate per la velocità della lievitazione a quella temperatura, rispetto a 20 °C (legge di Arrhenius: 4 °C ≈ un quinto, 30 °C ≈ 2,5 volte; sopra i 32 °C non accelera più).
 - **La curva**: grammi di lievito fresco per kg di farina in funzione delle "ore a 20 °C". Di partenza vale 3,5 g/kg a 8 ore e 0,9 g/kg a 24 ore, con una piccola correzione per sale e idratazione.
+- **Tempo a disposizione**: dalle ore dall'impasto al pasto (da 3 a 96) si tolgono mezz'ora per impastare e mezz'ora per stendere e cuocere; il resto è lievitazione.
+  - **Con il frigo** (da 11 ore in su): 1 ora di puntata, poi il frigo, poi 4 ore di appretto (5 se la lievitazione supera le 30 ore, 3 in teglia).
+  - **Senza frigo**: 2 ore di puntata (1 sotto le 6 ore di lievitazione e dopo una biga, mezz'ora sotto le 3), il resto di appretto.
+  - La **Verace** lievita solo a temperatura ambiente, da 7 a 25 ore dall'impasto al pasto.
+  - Le ricette Pizza Facile e Verace salvate prima contavano solo le ore di lievitazione: si riaprono con un'ora in più e le stesse dosi.
 
 Le dosi di lievito sono indicazioni: farina, temperatura vera e forno fanno la differenza. Se i tuoi impasti lievitano sempre troppo o troppo poco, ritocca la curva in **Altro → Impostazioni**: vale per tutte le ricette nuove.
 

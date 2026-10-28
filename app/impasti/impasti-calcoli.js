@@ -129,17 +129,19 @@
       staglio: "prima",
       forno: "casa",
     };
+    // Tempo a disposizione: le ore dall'impasto al pasto (modo "ore") o le fasi a mano ("fasi")
     if (stile === "facile") {
-      return { ...base, facile: { ore: 24, frigo: true }, forno: "casa", idratazione: FORNI.casa.idratazione, olio: FORNI.casa.olio };
+      return { ...base, facile: { ore: 24, frigo: true }, tempo: { modo: "ore", ore: 24, frigo: true }, forno: "casa", idratazione: FORNI.casa.idratazione, olio: FORNI.casa.olio };
     }
     if (stile === "verace") {
-      return { ...base, panetti: 4, peso: 250, idratazione: 60, salePerLitro: 50, forno: "legna", verace: { ore: 8, temp: ta } };
+      return { ...base, panetti: 4, peso: 250, idratazione: 60, salePerLitro: 50, forno: "legna", verace: { ore: 8, temp: ta }, tempo: { modo: "ore", ore: 10, frigo: false } };
     }
     if (stile === "biga") {
       return {
         ...base, idratazione: 70,
         biga: { percentuale: 100, idratazione: 45, lievito: 1, ore: 18, temp: 18, lievitoRinfresco: 0 },
         fasi: { puntata: { ore: 1, temp: ta }, frigo: { ore: 0, temp: tf }, appretto: { ore: 4, temp: ta } },
+        tempo: { modo: "ore", ore: 6, frigo: false },
       };
     }
     if (stile === "teglia") {
@@ -147,15 +149,70 @@
         ...base, idratazione: 75, olio: 30, sale: 25,
         teglia: { forma: "rettangolare", lato1: 30, lato2: 40, diametro: 32, numero: 1, grammatura: 0.55 },
         fasi: { puntata: { ore: 2, temp: ta }, frigo: { ore: 24, temp: tf }, appretto: { ore: 3, temp: ta } },
+        tempo: { modo: "ore", ore: 30, frigo: true },
       };
     }
-    return { ...base, fasi: { puntata: { ore: 2, temp: ta }, frigo: { ore: 22, temp: tf }, appretto: { ore: 4, temp: ta } } };
+    return { ...base, fasi: { puntata: { ore: 2, temp: ta }, frigo: { ore: 22, temp: tf }, appretto: { ore: 4, temp: ta } }, tempo: { modo: "fasi", ore: 29, frigo: true } };
   }
 
-  // Fasi di lievitazione dell'impasto finale, in ordine. Pizza Facile e Verace le ricavano da poche scelte.
+  // --- Tempo a disposizione ---
+  // Dalle ore che ci sono dall'impasto al pasto: mezz'ora per impastare e mezz'ora per stendere
+  // e cuocere (come nella pianificazione), il resto è lievitazione, divisa con le regole di Pizza
+  // Facile. Con il frigo: un'ora di puntata, il frigo e poi 4 ore di appretto (5 per le
+  // maturazioni lunghe, 3 in teglia). Senza: 1-2 ore di puntata e il resto di appretto.
+  const TEMPO = {
+    impasto: 0.5,
+    cottura: 0.5,
+    min: 3,
+    max: 96,
+    // Con meno ore il frigo non serve (10 ore di lievitazione, come Pizza Facile)
+    frigoDa: 11,
+    // La Verace lievita solo a temperatura ambiente, da 6 a 24 ore
+    verace: { min: 7, max: 25 },
+  };
+
+  function limitiTempo(stile) {
+    return stile === "verace" ? TEMPO.verace : { min: TEMPO.min, max: TEMPO.max };
+  }
+
+  function usaTempo(input) {
+    return input?.tempo?.modo === "ore";
+  }
+
+  function fasiDaTempo({ ore, frigo, stile, ta = 20, tf = 4 }) {
+    const { min, max } = limitiTempo(stile);
+    const totale = Math.min(Math.max(Number(ore) || 0, min), max);
+    const lievitazione = totale - TEMPO.impasto - TEMPO.cottura;
+    if (frigo && stile !== "verace" && totale >= TEMPO.frigoDa) {
+      const appretto = stile === "teglia" ? 3 : lievitazione >= 30 ? 5 : 4;
+      return [
+        { fase: "puntata", ore: 1, temp: ta },
+        { fase: "frigo", ore: lievitazione - 1 - appretto, temp: tf },
+        { fase: "appretto", ore: appretto, temp: ta },
+      ];
+    }
+    // Dopo una biga basta un'ora di puntata: la maturazione l'ha già fatta la biga
+    const puntata = lievitazione < 3 ? 0.5 : stile === "biga" || lievitazione < 6 ? 1 : 2;
+    return [
+      { fase: "puntata", ore: puntata, temp: ta },
+      { fase: "appretto", ore: lievitazione - puntata, temp: ta },
+    ];
+  }
+
+  // Le ore dall'impasto al pasto che corrispondono a delle fasi (per passare da un modo all'altro)
+  function tempoDaFasi(fasi) {
+    return fasi.reduce((s, f) => s + (Number(f.ore) || 0), 0) + TEMPO.impasto + TEMPO.cottura;
+  }
+
+  // Fasi di lievitazione dell'impasto finale, in ordine. Con il tempo a disposizione le divido io;
+  // Pizza Facile e Verace salvate prima le ricavano dalle loro poche scelte.
   function fasiLievitazione(input, imp = {}) {
     const ta = Number(imp.tempAmbiente) || 20;
     const tf = Number(imp.tempFrigo) || 4;
+    if (usaTempo(input)) {
+      const temp = input.stile === "verace" ? Number(input.verace?.temp) || ta : ta;
+      return fasiDaTempo({ ore: input.tempo.ore, frigo: Boolean(input.tempo.frigo), stile: input.stile, ta: temp, tf });
+    }
     if (input.stile === "facile") {
       const ore = Math.max(Number(input.facile?.ore) || 24, 3);
       if (input.facile?.frigo && ore >= 10) {
@@ -190,6 +247,8 @@
 
   function calcola(inputGrezzo, imp = {}, farineDb = []) {
     const input = { ...predefinito(inputGrezzo?.stile || "personalizzata", imp), ...inputGrezzo };
+    // Le ricette salvate prima del tempo a disposizione restano con le loro fasi
+    if (inputGrezzo?.tempo == null) delete input.tempo;
     const avvisi = [];
 
     // Impasto totale
@@ -450,6 +509,15 @@
     return { barre, passi, inizio: new Date(t0), fine: new Date(t), ore: durata / 3600000 };
   }
 
+  // Il programma senza orologio: ogni passo con le ore dall'inizio dell'impasto (prima, con il
+  // segno meno: la biga e il rinfresco del lievito madre) e le ore dall'impasto al pasto
+  function programma(risultato, imp = {}) {
+    const piano = pianifica(risultato, { inizio: new Date(0) }, imp);
+    const impasto = piano.barre.find((b) => b.fase === "impasto").inizio.getTime();
+    const ore = (d) => (d.getTime() - impasto) / 3600000;
+    return { passi: piano.passi.map((p) => ({ dopo: ore(p.quando), testo: p.testo })), pasto: ore(piano.fine) };
+  }
+
   // --- Dopo la cottura: problemi e consigli ---
 
   const PROBLEMI = [
@@ -508,8 +576,9 @@
     velocita, oreEquivalenti, dosePredefinita, curvaPredefinita, curvaValida, doseDaCurva, doseLievito, madreSuggerita,
     ORE_CURVA_TABELLA: ORE_CURVA, modelloDi, oreEquivalentiModello, doseBase, LP,
     STILI, FORNI, predefinito, fasiLievitazione, calcola, mixFarine,
+    TEMPO, limitiTempo, usaTempo, fasiDaTempo, tempoDaFasi,
     intervalloW, stimaW, durataPerW, rinfrescoMadre,
-    NOMI_FASI, fasiComplete, pianifica, PROBLEMI, VOTI, consigliCottura,
+    NOMI_FASI, fasiComplete, pianifica, programma, PROBLEMI, VOTI, consigliCottura,
     arrotonda, formatta, grammi,
   };
 
