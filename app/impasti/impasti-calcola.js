@@ -104,20 +104,15 @@
           num("peso", "Peso di un panetto", "g", { min: 100, max: 1000, passo: 5, aiuto: b.stile === "verace" ? "Per la Verace: da 200 a 280 g" : "Una pizza tonda da 30-33 cm: 230-280 g" }))));
     }
 
-    // Tempi
+    // Tempi: dalle ore che ci sono dall'impasto al pasto (le fasi le divido io) o fase per fase
+    preparaTempo(b, imp);
+    const temperature = h("p", { class: "hint" }, `Temperatura di casa: ${imp.tempAmbiente} °C, frigo: ${imp.tempFrigo} °C (si cambiano in Altro → Impostazioni).`);
     if (b.stile === "facile") {
-      b.facile = { ore: 24, frigo: true, ...b.facile };
-      const orari = [6, 8, 12, 24, 48, 72];
-      box.append(sezione("Quanto tempo hai",
-        App.sceltaPulsanti({ etichetta: "Dall'impasto alla cottura", valore: b.facile.ore, opzioni: orari.map((o) => ({ valore: o, testo: `${o} h` })), cambia: (v) => { b.facile.ore = v; salvaBozze(); ridisegna(); }, classe: "wrap" }),
-        b.facile.ore >= 10
-          ? App.interruttore({ etichetta: "Uso il frigo", aiuto: "Più ore in frigo, più sapore e digeribilità", valore: b.facile.frigo, cambia: (v) => { b.facile.frigo = v; aggiorna(); } })
-          : h("p", { class: "hint" }, "Con meno di 10 ore la lievitazione è tutta a temperatura ambiente."),
-        h("p", { class: "hint" }, `Temperatura di casa: ${imp.tempAmbiente} °C, frigo: ${imp.tempFrigo} °C (si cambiano in Altro → Impostazioni).`)));
+      box.append(sezione("Quanto tempo hai", ...campiTempo(b, aggiorna, ridisegna).elementi, temperature));
     } else if (b.stile === "verace") {
       b.verace = { ore: 8, temp: imp.tempAmbiente, ...b.verace };
-      box.append(sezione("Lievitazione",
-        riga(num("verace.ore", "Ore totali", "h", { min: 6, max: 24, aiuto: "2 ore di puntata, il resto di appretto" }), num("verace.temp", "Temperatura", "°C", { min: 10, max: 32 }))));
+      const t = campiTempo(b, aggiorna, ridisegna);
+      box.append(sezione("Quanto tempo hai", ...t.elementi, num("verace.temp", "Temperatura", "°C", { min: 10, max: 32, aiuto: "Dove lievita l'impasto", cambia: () => { aggiorna(); t.mostra(); } })));
     } else {
       if (b.stile === "biga") {
         b.biga = { ...C.predefinito("biga").biga, ...b.biga };
@@ -126,25 +121,100 @@
           riga(num("biga.lievito", "Lievito nella biga", "%", { min: 0, max: 5, passo: 0.1, aiuto: "Classico: 1% per 16-20 ore a 16-18 °C" }), num("biga.ore", "Ore della biga", "h", { min: 4, max: 72 }), num("biga.temp", "Temperatura", "°C", { min: 2, max: 30 }))));
       }
       b.fasi = { puntata: { ore: 0, temp: imp.tempAmbiente }, frigo: { ore: 0, temp: imp.tempFrigo }, appretto: { ore: 0, temp: imp.tempAmbiente }, ...b.fasi };
-      const fase = (id, nome, aiuto) => h("div", { class: "phase-row" },
-        h("div", { class: "phase-name" }, h("strong", null, nome), h("span", { class: "hint" }, aiuto)),
-        riga(num(`fasi.${id}.ore`, "Ore", "h", { min: 0, max: 96, passo: 0.5, cambia: () => { aggiorna(); if (id === "frigo") aggiornaStaglio(); } }), num(`fasi.${id}.temp`, "Temperatura", "°C", { min: 0, max: 35 })));
-      const staglio = h("div");
-      const aggiornaStaglio = () => {
-        staglio.textContent = "";
-        if ((b.fasi.frigo?.ore || 0) > 0) {
-          staglio.append(App.sceltaPulsanti({ etichetta: "Quando fai i panetti", valore: b.staglio || "prima", opzioni: [{ valore: "prima", testo: "Prima del frigo" }, { valore: "dopo", testo: "Dopo il frigo" }], cambia: (v) => { b.staglio = v; aggiorna(); } }));
-        }
-      };
-      aggiornaStaglio();
-      box.append(sezione(b.stile === "biga" ? "Dopo l'impasto finale" : "Lievitazione",
-        fase("puntata", "Puntata", "L'impasto intero riposa coperto"),
-        fase("frigo", "Frigo", "Facoltativo: 0 ore per non usarlo"),
-        fase("appretto", "Appretto", "I panetti lievitano prima della stesura"),
-        staglio));
+      const titolo = b.stile === "biga" ? "Dopo l'impasto finale" : "Lievitazione";
+      const modo = App.sceltaPulsanti({
+        etichetta: "Come decidi i tempi", valore: b.tempo.modo,
+        opzioni: [{ valore: "ore", testo: "Dalle ore che ho" }, { valore: "fasi", testo: "Fase per fase" }],
+        cambia: (v) => { cambiaModo(b, v, imp); salvaBozze(); ridisegna(); },
+      });
+      if (b.tempo.modo === "ore") {
+        box.append(sezione(titolo, modo, ...campiTempo(b, aggiorna, ridisegna).elementi, temperature));
+      } else {
+        const fase = (id, nome, aiuto) => h("div", { class: "phase-row" },
+          h("div", { class: "phase-name" }, h("strong", null, nome), h("span", { class: "hint" }, aiuto)),
+          riga(num(`fasi.${id}.ore`, "Ore", "h", { min: 0, max: 96, passo: 0.5, cambia: () => { aggiorna(); if (id === "frigo") aggiornaStaglio(); } }), num(`fasi.${id}.temp`, "Temperatura", "°C", { min: 0, max: 35 })));
+        const staglio = h("div");
+        const aggiornaStaglio = () => {
+          staglio.textContent = "";
+          if ((b.fasi.frigo?.ore || 0) > 0) {
+            staglio.append(App.sceltaPulsanti({ etichetta: "Quando fai i panetti", valore: b.staglio || "prima", opzioni: [{ valore: "prima", testo: "Prima del frigo" }, { valore: "dopo", testo: "Dopo il frigo" }], cambia: (v) => { b.staglio = v; aggiorna(); } }));
+          }
+        };
+        aggiornaStaglio();
+        box.append(sezione(titolo,
+          modo,
+          fase("puntata", "Puntata", "L'impasto intero riposa coperto"),
+          fase("frigo", "Frigo", "Facoltativo: 0 ore per non usarlo"),
+          fase("appretto", "Appretto", "I panetti lievitano prima della stesura"),
+          staglio));
+      }
     }
+    return aggiungiIngredienti(box, b, aggiorna, ridisegna, num);
+  }
 
-    // Ingredienti
+  // Le bozze di prima non hanno il tempo a disposizione: lo ricavo dai loro tempi. Pizza Facile
+  // e Verace contavano le ore di lievitazione, qui c'è anche l'ora per impastare e cuocere
+  function preparaTempo(b, imp) {
+    if (!b.tempo) {
+      if (b.stile === "facile") b.tempo = { ore: (Number(b.facile?.ore) || 24) + 1, frigo: b.facile?.frigo ?? true };
+      else if (b.stile === "verace") b.tempo = { ore: (Number(b.verace?.ore) || 8) + 1, frigo: false };
+      else {
+        const fasi = C.fasiLievitazione(b, imp);
+        b.tempo = { modo: "fasi", ore: C.tempoDaFasi(fasi), frigo: fasi.some((f) => f.fase === "frigo") };
+      }
+    }
+    // Facile e Verace non hanno le fasi a mano
+    if (b.stile === "facile" || b.stile === "verace" || !["ore", "fasi"].includes(b.tempo.modo)) b.tempo.modo = "ore";
+  }
+
+  // Passando da un modo all'altro si parte da quello che c'era: le fasi divise dalle ore, oppure
+  // le ore che fanno le fasi scritte a mano
+  function cambiaModo(b, modo, imp) {
+    if (modo === b.tempo.modo) return;
+    const fasi = C.fasiLievitazione(b, imp);
+    if (modo === "fasi") {
+      const di = (id) => fasi.find((f) => f.fase === id);
+      b.fasi = Object.fromEntries(["puntata", "frigo", "appretto"].map((id) => [id, { ore: di(id)?.ore || 0, temp: di(id)?.temp ?? (id === "frigo" ? imp.tempFrigo : imp.tempAmbiente) }]));
+    } else {
+      const { min, max } = C.limitiTempo(b.stile);
+      b.tempo.ore = Math.min(Math.max(Math.round(C.tempoDaFasi(fasi) * 2) / 2, min), max);
+      b.tempo.frigo = fasi.some((f) => f.fase === "frigo");
+    }
+    b.tempo.modo = modo;
+  }
+
+  // Le ore dall'impasto al pasto, con le scelte rapide e il frigo; sotto, come le divido
+  function campiTempo(b, aggiorna, ridisegna) {
+    const imp = App.impostazioni();
+    const { min, max } = C.limitiTempo(b.stile);
+    const verace = b.stile === "verace";
+    const rapide = (verace ? [8, 10, 12, 18, 24] : [4, 6, 8, 12, 24, 48]).map((o) => ({ valore: o, testo: `${o} h` }));
+    const scelte = App.sceltaPulsanti({ etichetta: "Scelte rapide", valore: b.tempo.ore, opzioni: rapide, cambia: (v) => { b.tempo.ore = v; salvaBozze(); ridisegna(); }, classe: "wrap rapide" });
+    const frigo = h("div");
+    const divise = h("p", { class: "hint tempo-fasi" });
+    const mostra = () => {
+      scelte.querySelectorAll(".seg").forEach((x) => x.setAttribute("aria-pressed", String(Number(x.dataset.v) === Number(b.tempo.ore))));
+      frigo.textContent = "";
+      if (verace) frigo.append(h("p", { class: "hint" }, "La Verace lievita a temperatura ambiente, senza frigo."));
+      else if ((Number(b.tempo.ore) || 0) >= C.TEMPO.frigoDa) {
+        frigo.append(App.interruttore({ etichetta: "Uso il frigo", aiuto: "Più ore in frigo, più sapore e digeribilità", valore: b.tempo.frigo, cambia: (v) => { b.tempo.frigo = v; aggiorna(); mostra(); } }));
+        if (b.tempo.frigo && b.stile !== "facile") {
+          frigo.append(App.sceltaPulsanti({ etichetta: "Quando fai i panetti", valore: b.staglio || "prima", opzioni: [{ valore: "prima", testo: "Prima del frigo" }, { valore: "dopo", testo: "Dopo il frigo" }], cambia: (v) => { b.staglio = v; aggiorna(); } }));
+        }
+      } else frigo.append(h("p", { class: "hint" }, `Con meno di ${C.TEMPO.frigoDa} ore la lievitazione è tutta a temperatura ambiente.`));
+      divise.textContent = `Le divido così: impasto ${App.ore(C.TEMPO.impasto)} → ${testoFasi(C.fasiLievitazione(b, imp))} → stesura e cottura ${App.ore(C.TEMPO.cottura)}.`;
+    };
+    const campo = App.campoNumero({
+      oggetto: b, percorso: "tempo.ore", etichetta: b.stile === "biga" ? "Ore dall'impasto finale al pasto" : "Ore dall'impasto al pasto", unita: "h",
+      min, max, passo: 0.5, aiuto: `Da ${min} a ${max} ore. Conto mezz'ora per impastare e mezz'ora per stendere e cuocere.`,
+      cambia: () => { aggiorna(); mostra(); },
+    });
+    mostra();
+    return { elementi: [campo, scelte, frigo, divise], mostra };
+  }
+
+  // Ingredienti e farine, in fondo al modulo
+  function aggiungiIngredienti(box, b, aggiorna, ridisegna, num) {
     const ingredienti = sezione("Ingredienti");
     if (b.stile === "facile") {
       ingredienti.append(
@@ -285,10 +355,13 @@
       ]));
     }
 
-    if (r.wMedio) box.append(h("p", { class: "hint" }, `Forza media delle farine: W ${Math.round(r.wMedio)}. Per ${App.ore(r.oreTotali + (r.biga ? r.biga.ore : 0))} di maturazione è consigliata una W ${r.consigliW.min}-${r.consigliW.max}.`));
+    const maturazione = App.ore(r.oreTotali + (r.biga ? r.biga.ore : 0));
+    if (r.wMedio) box.append(h("p", { class: "hint" }, `Forza media delle farine: W ${Math.round(r.wMedio)}. Per ${maturazione} di maturazione è consigliata una W ${r.consigliW.min}-${r.consigliW.max}.`));
+    else if (r.consigliW) box.append(h("p", { class: "hint" }, `Per ${maturazione} di maturazione usa una farina da W ${r.consigliW.min}-${r.consigliW.max}.`));
     if (r.avvisi.length) box.append(h("ul", { class: "warnings" }, r.avvisi.map((a) => h("li", null, a))));
 
     box.append(h("div", { class: "phases-line" }, h("strong", null, `${r.biga ? "Dopo l'impasto finale" : "Lievitazione"}: ${App.ore(r.oreTotali)}`), h("span", null, testoFasi(r.fasi))));
+    if (C.usaTempo(r.input)) box.append(vistaProgramma(r));
     if (!r.biga) {
       const modello = r.modello || "impasti";
       if (ricalcola) {
@@ -317,6 +390,19 @@
       box.append(h("p", { class: "hint" }, "Dosi calcolate quando hai salvato la ricetta."));
     }
     return box;
+  }
+
+  // Il programma in ore dall'inizio dell'impasto, per chi ha detto quante ore ha: cosa fare e
+  // dopo quanto, fino al pasto. Con Pianifica gli stessi passi diventano ore del giorno.
+  function vistaProgramma(r) {
+    const p = C.programma(r, App.impostazioni());
+    const quando = (ore) => (Math.abs(ore) < 1e-9 ? "Subito" : ore < 0 ? `${App.ore(-ore)} prima` : `+${App.ore(ore)}`);
+    return h("div", { class: "program" },
+      h("h3", null, `Il programma: ${App.ore(p.pasto)} dall'impasto al pasto`),
+      h("ol", { class: "steps relativi" },
+        p.passi.map((x) => h("li", { class: "step" }, h("span", { class: "quando" }, quando(x.dopo)), h("span", null, x.testo))),
+        h("li", { class: "step" }, h("span", { class: "quando" }, quando(p.pasto)), h("span", null, "A tavola"))),
+      h("p", { class: "hint" }, "Le ore contano dall'inizio dell'impasto. Con ⏰ Pianifica diventano ore del giorno."));
   }
 
   App.vistaRisultato = vistaRisultato;

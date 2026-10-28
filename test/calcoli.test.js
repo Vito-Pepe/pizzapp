@@ -148,6 +148,78 @@ test("pianificazione in avanti, con biga e lievito madre", () => {
   assert.equal(madre.barre[0].ore, 5);
 });
 
+test("tempo a disposizione: impasto, fasi, stesura e cottura fanno le ore che hai", () => {
+  for (const stile of Object.keys(C.STILI)) {
+    for (const ore of [3, 4.5, 8, 11, 24, 48, 96]) {
+      for (const frigo of [true, false]) {
+        const r = C.calcola({ stile, tempo: { modo: "ore", ore, frigo } });
+        const { min, max } = C.limitiTempo(stile);
+        const atteso = Math.min(Math.max(ore, min), max);
+        vicino(C.tempoDaFasi(r.fasi), atteso, 1e-9, `${stile}, ${ore} ore:`);
+        assert.ok(r.fasi.every((f) => f.ore > 0), `${stile}, ${ore} ore: fasi vuote`);
+        vicino(C.programma(r).pasto, atteso, 1e-9, `${stile}, ${ore} ore, programma:`);
+        const inizio = new Date("2026-11-01T10:00:00");
+        const piano = C.pianifica(r, { inizio });
+        if (stile !== "biga") vicino(piano.fine.getTime() - inizio.getTime(), atteso * 3600000, 1, "si mangia dopo le ore che hai");
+      }
+    }
+  }
+});
+
+test("tempo a disposizione: come si dividono le fasi", () => {
+  const fasi = (input) => C.calcola(input).fasi.map((f) => [f.fase, f.ore]);
+  const tempo = (ore, frigo, extra = {}) => fasi({ stile: "personalizzata", tempo: { modo: "ore", ore, frigo }, ...extra });
+  assert.deepEqual(tempo(24, true), [["puntata", 1], ["frigo", 18], ["appretto", 4]], "con il frigo");
+  assert.deepEqual(tempo(48, true), [["puntata", 1], ["frigo", 41], ["appretto", 5]], "maturazione lunga: 5 ore di appretto");
+  assert.deepEqual(tempo(10, true), [["puntata", 2], ["appretto", 7]], "con meno di 11 ore niente frigo");
+  assert.deepEqual(tempo(10, false), [["puntata", 2], ["appretto", 7]]);
+  assert.deepEqual(tempo(5, false), [["puntata", 1], ["appretto", 3]]);
+  assert.deepEqual(tempo(3, false), [["puntata", 0.5], ["appretto", 1.5]], "il minimo: 3 ore");
+  assert.deepEqual(tempo(1, false), [["puntata", 0.5], ["appretto", 1.5]], "sotto le 3 ore si conta 3");
+  assert.deepEqual(fasi({ stile: "teglia", tempo: { modo: "ore", ore: 30, frigo: true } }), [["puntata", 1], ["frigo", 25], ["appretto", 3]], "in teglia 3 ore di appretto");
+  assert.deepEqual(fasi({ stile: "biga", tempo: { modo: "ore", ore: 8, frigo: false } }), [["puntata", 1], ["appretto", 6]], "dopo la biga un'ora di puntata");
+  // La Verace: solo a temperatura ambiente, alla sua temperatura, da 6 a 24 ore di lievitazione
+  const verace = C.calcola({ stile: "verace", verace: { temp: 24 }, tempo: { modo: "ore", ore: 30, frigo: true } });
+  assert.deepEqual(verace.fasi.map((f) => [f.fase, f.ore, f.temp]), [["puntata", 2, 24], ["appretto", 22, 24]]);
+  // Le temperature vengono dalle impostazioni
+  const caldo = C.calcola({ stile: "facile", tempo: { modo: "ore", ore: 24, frigo: true } }, { tempAmbiente: 26, tempFrigo: 6 });
+  assert.deepEqual(caldo.fasi.map((f) => f.temp), [26, 6, 26]);
+  // Con le fasi a mano il tempo non conta
+  assert.deepEqual(tempo(8, false, { tempo: { modo: "fasi", ore: 8 }, fasi: { puntata: { ore: 3, temp: 20 }, appretto: { ore: 5, temp: 20 } } }), [["puntata", 3], ["appretto", 5]]);
+});
+
+test("tempo a disposizione: Pizza Facile e Verace salvate prima danno le stesse dosi", () => {
+  for (const [ore, frigo] of [[24, true], [10, true], [8, false], [6, false], [48, true]]) {
+    const prima = C.calcola({ stile: "facile", facile: { ore, frigo } });
+    const ora = C.calcola({ stile: "facile", tempo: { modo: "ore", ore: ore + 1, frigo } });
+    assert.deepEqual(ora.fasi, prima.fasi, `${ore} ore`);
+    vicino(ora.lievito.grammi, prima.lievito.grammi, 1e-9);
+  }
+  const prima = C.calcola({ stile: "verace", verace: { ore: 12, temp: 22 } });
+  const ora = C.calcola({ stile: "verace", verace: { temp: 22 }, tempo: { modo: "ore", ore: 13, frigo: false } });
+  assert.deepEqual(ora.fasi, prima.fasi);
+  // Senza tempo nell'impasto (ricette vecchie) restano le fasi di prima, non quelle predefinite
+  assert.deepEqual(C.calcola({ stile: "teglia" }).fasi.map((f) => f.ore), [2, 24, 3]);
+  assert.deepEqual(C.calcola({ stile: "facile", facile: { ore: 72, frigo: true } }).fasi.map((f) => f.ore), [1, 66, 5]);
+});
+
+test("programma: i passi in ore dall'impasto", () => {
+  const r = C.calcola({ stile: "facile", forno: "casa", tempo: { modo: "ore", ore: 24, frigo: true } });
+  const p = C.programma(r);
+  const quando = (inizio) => p.passi.find((x) => x.testo.startsWith(inizio))?.dopo;
+  assert.equal(quando("Impasta"), 0);
+  assert.equal(quando("Fai i panetti e mettili in frigo"), 1.5);
+  assert.equal(quando("Togli i panetti dal frigo"), 19.5);
+  assert.equal(quando("Accendi il forno"), 22.5);
+  assert.equal(quando("Stendi"), 23.5);
+  assert.equal(p.pasto, 24);
+  // La biga si prepara prima dell'impasto: ore con il segno meno
+  const biga = C.programma(C.calcola({ stile: "biga", tempo: { modo: "ore", ore: 6, frigo: false } }));
+  assert.equal(biga.passi[0].dopo, -18);
+  assert.ok(biga.passi[0].testo.startsWith("Prepara la biga"));
+  assert.equal(biga.pasto, 6);
+});
+
 test("consigli dopo la cottura", () => {
   const c = C.consigliCottura({ problemi: ["collassato", "bruciato"], voti: { sapore: 4 } });
   assert.equal(c.length, 2);
